@@ -139,13 +139,26 @@ class TopupSheet extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: C.violet.withOpacity(0.2))),
                 child: Row(children: [
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('${p['name'] ?? 'Package'}', style: const TextStyle(color: C.t1, fontWeight: FontWeight.w700, fontSize: 14)),
-                    if (p['description'] != null)
-                      Text('${p['description']}', style: const TextStyle(color: C.t2, fontSize: 11)),
-                  ]),
-                  const Spacer(),
-                  Text('${p['price'] ?? ''}', style: const TextStyle(color: C.violet, fontWeight: FontWeight.w800, fontSize: 15)),
+                    const SizedBox(height: 4),
+                    // Coins amount
+                    Row(children: [
+                      const Icon(Icons.monetization_on_rounded, color: C.gold, size: 13),
+                      const SizedBox(width: 4),
+                      Text('${p['coins'] ?? p['coin'] ?? p['amount'] ?? '?'} Coins ရမည်',
+                        style: const TextStyle(color: C.gold, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ]),
+                  ])),
+                  // Price
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: C.violet.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: C.violet.withOpacity(0.3))),
+                    child: Text('${p['price'] ?? ''}',
+                      style: const TextStyle(color: C.violet, fontWeight: FontWeight.w800, fontSize: 14))),
                 ]))),
               const SizedBox(height: 16),
             ],

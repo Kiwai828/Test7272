@@ -1,3 +1,4 @@
+import 'package:video_player/video_player.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ class _SS extends ConsumerState<SubtitleScreen> with SingleTickerProviderStateMi
   final _api = Api();
   final _urlCtrl = TextEditingController();
   String? _vfname;
+  String? _previewUrl;
   File? _logoFile;
 
   bool _flip = false, _noise = false;
@@ -57,7 +59,7 @@ class _SS extends ConsumerState<SubtitleScreen> with SingleTickerProviderStateMi
     setState(() { _msg = 'Upload လုပ်နေသည်...'; _vfname = null; });
     try {
       final f = await Uploader.upload(File(r!.files.single.path!), ref);
-      setState(() { _vfname = f; _msg = '✅ Video တင်ပြီးပြီ'; });
+      setState(() { _vfname = f; _previewUrl = '${Api().baseUrl}/stream-file/$f'; _msg = '✅ Video တင်ပြီးပြီ'; });
     } catch (e) { setState(() => _msg = '❌ $e'); }
   }
 
@@ -68,7 +70,7 @@ class _SS extends ConsumerState<SubtitleScreen> with SingleTickerProviderStateMi
     try {
       final r = await _api.downloadUrl(url);
       if (r['status'] == 'success') {
-        setState(() { _vfname = r['filename']; _msg = '✅ Download ပြီးပြီ'; });
+        setState(() { _vfname = r['filename']; _previewUrl = '${Api().baseUrl}/stream-file/${r["filename"]}'; _msg = '✅ Download ပြီးပြီ'; });
       } else { setState(() => _msg = '❌ ${r['message']}'); }
     } catch (e) { setState(() => _msg = '❌ $e'); }
     setState(() => _urlLoad = false);
@@ -215,6 +217,12 @@ class _SS extends ConsumerState<SubtitleScreen> with SingleTickerProviderStateMi
                     ])),
                 ],
               ])),
+
+              const SizedBox(height: 12),
+
+              // Video Preview
+              if (_previewUrl != null)
+                _SubPreview(url: _previewUrl!),
 
               const SizedBox(height: 12),
 
@@ -366,5 +374,111 @@ class _SS extends ConsumerState<SubtitleScreen> with SingleTickerProviderStateMi
             decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(12),
               border: Border.all(color: c == cur ? C.cyan : C.bdr, width: c == cur ? 2.5 : 1))))).toList())));
     if (p != null) cb(p);
+  }
+}
+
+// ── Subtitle Screen Video Preview ────────────────
+class _SubPreview extends StatelessWidget {
+  final String url;
+  const _SubPreview({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.all(12),
+      borderColor: C.cyan.withOpacity(0.25),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.play_circle_rounded, color: C.cyan, size: 14),
+          SizedBox(width: 6),
+          Text('VIDEO PREVIEW', style: TextStyle(
+            color: C.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+        ]),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(PageRouteBuilder(
+            opaque: false, barrierColor: Colors.black87, barrierDismissible: true,
+            transitionDuration: const Duration(milliseconds: 350),
+            pageBuilder: (_, __, ___) => _SubVideoPlayer(url: url),
+            transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim,
+              child: ScaleTransition(scale: Tween(begin: 0.93, end: 1.0)
+                .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)), child: child)))),
+          child: Container(height: 160,
+            decoration: BoxDecoration(color: C.bg1, borderRadius: BorderRadius.circular(12), border: Border.all(color: C.bdr)),
+            child: ClipRRect(borderRadius: BorderRadius.circular(12),
+              child: Stack(alignment: Alignment.center, children: [
+                Container(color: C.bg1),
+                Container(width: 52, height: 52,
+                  decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad2), shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: C.cyan.withOpacity(0.4), blurRadius: 16)]),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30)),
+                Positioned(bottom: 8, right: 8,
+                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                    child: const Text('Tap to preview', style: TextStyle(color: Colors.white70, fontSize: 10)))),
+              ]))),
+        ),
+      ]),
+    );
+  }
+}
+
+class _SubVideoPlayer extends StatefulWidget {
+  final String url;
+  const _SubVideoPlayer({required this.url});
+  @override
+  State<_SubVideoPlayer> createState() => _SVPS();
+}
+
+class _SVPS extends State<_SubVideoPlayer> {
+  late VideoPlayerController _vpc;
+  bool _ready = false, _err = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _vpc = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) { if (mounted) { setState(() => _ready = true); _vpc.play(); } })
+      .catchError((_) { if (mounted) setState(() => _err = true); });
+  }
+
+  @override
+  void dispose() { _vpc.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(backgroundColor: Colors.black, body: Stack(children: [
+      if (_ready) Center(child: GestureDetector(
+        onTap: () => setState(() => _vpc.value.isPlaying ? _vpc.pause() : _vpc.play()),
+        child: AspectRatio(aspectRatio: _vpc.value.aspectRatio, child: VideoPlayer(_vpc)))),
+      if (!_ready && !_err) const Center(child: CircularProgressIndicator(color: C.cyan, strokeWidth: 2.5)),
+      if (_err) const Center(child: Text('Video ဖွင့်မရပါ', style: TextStyle(color: C.rose, fontSize: 16))),
+      if (_ready) Positioned(bottom: 0, left: 0, right: 0,
+        child: Container(padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+          decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+            colors: [Colors.transparent, Colors.black.withOpacity(0.8)])),
+          child: Column(children: [
+            ValueListenableBuilder(valueListenable: _vpc, builder: (_, v, __) {
+              final pos = v.position.inMilliseconds.toDouble();
+              final dur = v.duration.inMilliseconds.toDouble();
+              return SliderTheme(data: SliderThemeData(trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                activeTrackColor: C.cyan, inactiveTrackColor: Colors.white24, thumbColor: Colors.white),
+                child: Slider(value: dur > 0 ? (pos/dur).clamp(0.0,1.0) : 0,
+                  onChanged: (v2) => _vpc.seekTo(Duration(milliseconds: (v2*dur).toInt()))));
+            }),
+            GestureDetector(
+              onTap: () => setState(() => _vpc.value.isPlaying ? _vpc.pause() : _vpc.play()),
+              child: Container(width: 52, height: 52,
+                decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad2), shape: BoxShape.circle),
+                child: ValueListenableBuilder(valueListenable: _vpc, builder: (_, v, __) =>
+                  Icon(v.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 28)))),
+          ]))),
+      SafeArea(child: Padding(padding: const EdgeInsets.all(8),
+        child: GestureDetector(onTap: () => Navigator.pop(context),
+          child: Container(width: 38, height: 38,
+            decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+            child: const Icon(Icons.close_rounded, color: Colors.white, size: 20))))),
+    ]));
   }
 }

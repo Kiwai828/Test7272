@@ -1,3 +1,4 @@
+import 'package:video_player/video_player.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
   final _aiCtrl = TextEditingController();
 
   String? _vfname;
+  String? _previewUrl; // video preview URL after upload
   File? _logoFile;
 
   // Effects
@@ -64,7 +66,11 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
     setState(() { _msg = 'Upload လုပ်နေသည်...'; _vfname = null; });
     try {
       final f = await Uploader.upload(File(r!.files.single.path!), ref);
-      setState(() { _vfname = f; _msg = '✅ Video တင်ပြီးပြီ'; });
+      setState(() {
+        _vfname = f;
+        _previewUrl = '${Api().baseUrl}/stream-file/$f';
+        _msg = '✅ Video တင်ပြီးပြီ';
+      });
       _reAnalyze();
     } catch (e) { setState(() => _msg = '❌ $e'); }
   }
@@ -76,7 +82,11 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
     try {
       final r = await _api.downloadUrl(url);
       if (r['status'] == 'success') {
-        setState(() { _vfname = r['filename']; _msg = '✅ Download ပြီးပြီ'; });
+        setState(() {
+          _vfname = r['filename'];
+          _previewUrl = '${Api().baseUrl}/stream-file/${r['filename']}';
+          _msg = '✅ Download ပြီးပြီ';
+        });
         _reAnalyze();
       } else { setState(() => _msg = '❌ ${r['message']}'); }
     } catch (e) { setState(() => _msg = '❌ $e'); }
@@ -225,6 +235,15 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
 
                 // ── Video Source Card ─────────────────
                 _buildVideoSource(),
+
+                const SizedBox(height: 12),
+
+                // ── Video Preview ─────────────────────
+                if (_previewUrl != null)
+                  _VideoPreview(
+                    url: _previewUrl!,
+                    blurEnabled: _blur,
+                  ),
 
                 const SizedBox(height: 12),
 
@@ -547,5 +566,176 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
         )).toList()),
     ));
     if (picked != null) cb(picked);
+  }
+}
+
+// ── Video Preview Widget ──────────────────────────
+class _VideoPreview extends StatefulWidget {
+  final String url;
+  final bool blurEnabled;
+  const _VideoPreview({required this.url, required this.blurEnabled});
+  @override
+  State<_VideoPreview> createState() => _VPState();
+}
+
+class _VPState extends State<_VideoPreview> {
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.all(12),
+      borderColor: C.violet.withOpacity(0.25),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.play_circle_rounded, color: C.violet, size: 14),
+          const SizedBox(width: 6),
+          const Text('VIDEO PREVIEW', style: TextStyle(
+            color: C.violet, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+          const Spacer(),
+          if (widget.blurEnabled)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: C.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: C.rose.withOpacity(0.3))),
+              child: const Text('BLUR ON', style: TextStyle(color: C.rose, fontSize: 9, fontWeight: FontWeight.w800))),
+        ]),
+        const SizedBox(height: 10),
+        // Tap to open full player
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(PageRouteBuilder(
+            opaque: false,
+            barrierColor: Colors.black87,
+            barrierDismissible: true,
+            transitionDuration: const Duration(milliseconds: 350),
+            pageBuilder: (_, __, ___) => _FullVideoPlayer(url: widget.url),
+            transitionsBuilder: (_, anim, __, child) => FadeTransition(
+              opacity: anim,
+              child: ScaleTransition(
+                scale: Tween(begin: 0.93, end: 1.0)
+                  .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                child: child)),
+          )),
+          child: Container(
+            height: 180,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: C.bdr)),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(alignment: Alignment.center, children: [
+                // Dark placeholder bg
+                Container(color: C.bg1),
+                // Play icon overlay
+                Container(
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: C.grad1),
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: C.violet.withOpacity(0.5), blurRadius: 20)]),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32)),
+                // Tap hint
+                Positioned(bottom: 10, right: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                    child: const Text('Tap to preview', style: TextStyle(color: Colors.white70, fontSize: 10)))),
+              ]),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Full Screen Video Player ──────────────────────
+class _FullVideoPlayer extends StatefulWidget {
+  final String url;
+  const _FullVideoPlayer({required this.url});
+  @override
+  State<_FullVideoPlayer> createState() => _FVP();
+}
+
+class _FVP extends State<_FullVideoPlayer> {
+  late VideoPlayerController _vpc;
+  bool _ready = false, _err = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _vpc = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (mounted) { setState(() => _ready = true); _vpc.play(); }
+      }).catchError((_) { if (mounted) setState(() => _err = true); });
+    _vpc.setLooping(false);
+  }
+
+  @override
+  void dispose() { _vpc.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(children: [
+        if (_ready) Center(child: GestureDetector(
+          onTap: () => setState(() => _vpc.value.isPlaying ? _vpc.pause() : _vpc.play()),
+          child: AspectRatio(aspectRatio: _vpc.value.aspectRatio, child: VideoPlayer(_vpc)))),
+        if (!_ready && !_err) const Center(child: CircularProgressIndicator(color: C.violet, strokeWidth: 2.5)),
+        if (_err) Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.error_outline_rounded, color: C.rose, size: 48),
+          const SizedBox(height: 12),
+          const Text('Video ဖွင့်မရပါ', style: TextStyle(color: C.t1, fontSize: 16)),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () { Clipboard.setData(ClipboardData(text: widget.url)); Navigator.pop(context); },
+            child: Container(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad1), borderRadius: BorderRadius.circular(12)),
+              child: const Text('Link ကူးမည်', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)))),
+        ])),
+        if (_ready) Positioned(bottom: 0, left: 0, right: 0,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Colors.transparent, Colors.black.withOpacity(0.8)])),
+            child: Column(children: [
+              ValueListenableBuilder(valueListenable: _vpc, builder: (_, v, __) {
+                final pos = v.position.inMilliseconds.toDouble();
+                final dur = v.duration.inMilliseconds.toDouble();
+                return Column(children: [
+                  SliderTheme(data: SliderThemeData(trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    activeTrackColor: C.violet, inactiveTrackColor: Colors.white24, thumbColor: Colors.white),
+                    child: Slider(value: dur > 0 ? (pos/dur).clamp(0.0,1.0) : 0,
+                      onChanged: (val) => _vpc.seekTo(Duration(milliseconds: (val*dur).toInt())))),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Text(_fmt(v.position), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                    Text(_fmt(v.duration), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                  ]),
+                ]);
+              }),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => setState(() => _vpc.value.isPlaying ? _vpc.pause() : _vpc.play()),
+                child: Container(width: 52, height: 52,
+                  decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad1), shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: C.violet.withOpacity(0.5), blurRadius: 16)]),
+                  child: ValueListenableBuilder(valueListenable: _vpc, builder: (_, v, __) =>
+                    Icon(v.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 28)))),
+            ]))),
+        SafeArea(child: Padding(padding: const EdgeInsets.all(8),
+          child: GestureDetector(onTap: () => Navigator.pop(context),
+            child: Container(width: 38, height: 38,
+              decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              child: const Icon(Icons.close_rounded, color: Colors.white, size: 20))))),
+      ]),
+    );
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 }

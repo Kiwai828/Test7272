@@ -10,6 +10,8 @@ class Api {
   late final Dio dio;
   final _jar = CookieJar();
 
+  String get baseUrl => AppConstants.baseUrl;
+
   Api._() {
     dio = Dio(BaseOptions(
       baseUrl: AppConstants.baseUrl,
