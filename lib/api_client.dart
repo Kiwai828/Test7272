@@ -3,14 +3,14 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'constants.dart';
 
-class ApiClient {
-  static final ApiClient _i = ApiClient._internal();
-  factory ApiClient() => _i;
+class Api {
+  static final Api _i = Api._();
+  factory Api() => _i;
 
   late final Dio dio;
-  final CookieJar _jar = CookieJar();
+  final _jar = CookieJar();
 
-  ApiClient._internal() {
+  Api._() {
     dio = Dio(BaseOptions(
       baseUrl: AppConstants.baseUrl,
       connectTimeout: const Duration(seconds: 30),
@@ -20,11 +20,10 @@ class ApiClient {
     dio.interceptors.add(CookieManager(_jar));
   }
 
-  // ── AUTH ───────────────────────────────────────
-  Future<Map<String, dynamic>> login(String username, String password) async {
+  Future<Map<String, dynamic>> login(String u, String p) async {
     try {
       final r = await dio.post('/login',
-        data: {'username': username, 'password': password},
+        data: {'username': u, 'password': p},
         options: Options(contentType: Headers.formUrlEncodedContentType));
       return r.data as Map<String, dynamic>;
     } on DioException catch (e) {
@@ -37,79 +36,70 @@ class ApiClient {
     await _jar.deleteAll();
   }
 
-  // ── USER ───────────────────────────────────────
-  Future<Map<String, dynamic>> getUser() async {
+  Future<Map<String, dynamic>> userInfo() async {
     final r = await dio.get('/api/user_info');
     return r.data as Map<String, dynamic>;
   }
 
-  Future<List<dynamic>> getPackages() async {
-    final r = await dio.get('/api/get_packages');
-    return r.data as List<dynamic>;
-  }
-
-  // ── HISTORY ────────────────────────────────────
-  Future<List<dynamic>> getHistory() async {
+  Future<List<dynamic>> history() async {
     final r = await dio.get('/api/my_history');
     return r.data as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> getJobStatus(String jobId) async {
-    final r = await dio.get('/status/$jobId');
+  Future<Map<String, dynamic>> jobStatus(String id) async {
+    final r = await dio.get('/status/$id');
     return r.data as Map<String, dynamic>;
   }
 
-  // ── UPLOAD (chunked) ───────────────────────────
-  Future<String> uploadInit(String filename, int totalChunks, int fileSize) async {
-    final r = await dio.post('/upload-init', data: {
-      'filename': filename, 'total_chunks': totalChunks, 'file_size': fileSize,
-    });
-    if (r.data['status'] != 'success') throw Exception(r.data['message']);
+  Future<String> uploadInit(String name, int chunks, int size) async {
+    final r = await dio.post('/upload-init',
+      data: {'filename': name, 'total_chunks': chunks, 'file_size': size});
+    if (r.data['status'] != 'success') throw r.data['message'];
     return r.data['upload_id'] as String;
   }
 
-  Future<void> uploadChunk(String uploadId, int index, List<int> bytes) async {
+  Future<void> uploadChunk(String id, int idx, List<int> bytes) async {
     await dio.post('/upload-chunk', data: FormData.fromMap({
-      'upload_id': uploadId,
-      'chunk_index': index.toString(),
-      'chunk': MultipartFile.fromBytes(bytes, filename: 'chunk_$index'),
+      'upload_id': id,
+      'chunk_index': idx.toString(),
+      'chunk': MultipartFile.fromBytes(bytes, filename: 'c$idx'),
     }));
   }
 
-  Future<String> uploadComplete(String uploadId) async {
-    final r = await dio.post('/upload-complete', data: {'upload_id': uploadId});
-    if (r.data['status'] != 'success') throw Exception(r.data['message']);
+  Future<String> uploadComplete(String id) async {
+    final r = await dio.post('/upload-complete', data: {'upload_id': id});
+    if (r.data['status'] != 'success') throw r.data['message'];
     return r.data['filename'] as String;
   }
 
-  // ── DOWNLOAD FROM URL ──────────────────────────
-  Future<Map<String, dynamic>> downloadFromUrl(String url) async {
+  Future<Map<String, dynamic>> downloadUrl(String url) async {
     final r = await dio.post('/download-from-url', data: {'url': url});
     return r.data as Map<String, dynamic>;
   }
 
-  // ── VIDEO PROCESS ──────────────────────────────
-  Future<Map<String, dynamic>> processVideo(Map<String, String> data) async {
-    final r = await dio.post('/process-video',
-      data: data,
+  Future<Map<String, dynamic>> processVideo(Map<String, String> d) async {
+    final r = await dio.post('/process', data: d,
       options: Options(contentType: Headers.formUrlEncodedContentType));
     return r.data as Map<String, dynamic>;
   }
 
-  // ── SUBTITLE PROCESS ───────────────────────────
-  Future<Map<String, dynamic>> processSubtitles(Map<String, String> data) async {
-    final r = await dio.post('/process-subtitles',
-      data: data,
+  Future<Map<String, dynamic>> processSubtitle(Map<String, String> d) async {
+    final r = await dio.post('/process-subtitles', data: d,
       options: Options(contentType: Headers.formUrlEncodedContentType));
     return r.data as Map<String, dynamic>;
   }
 
-  // ── RE-ANALYZE ─────────────────────────────────
-  Future<String> reAnalyze(String filename) async {
-    final r = await dio.post('/re-analyze',
-      data: {'filename': filename},
+  Future<String> reAnalyze(String fname) async {
+    final r = await dio.post('/re-analyze', data: {'filename': fname},
       options: Options(contentType: Headers.formUrlEncodedContentType));
     return r.data['translated_text'] ?? '';
+  }
+
+  String streamUrl(String path) {
+    if (path.startsWith('http')) return path;
+    // Use /stream-file/ for video preview
+    final fname = path.split('/').last;
+    return '${AppConstants.baseUrl}/stream-file/$fname';
   }
 
   String resolveUrl(String path) {

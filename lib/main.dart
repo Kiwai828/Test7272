@@ -10,15 +10,14 @@ void main() {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: AppTheme.surface,
+    systemNavigationBarColor: C.bg1,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
-  runApp(const ProviderScope(child: RecapMakerApp()));
+  runApp(const ProviderScope(child: App()));
 }
 
-class RecapMakerApp extends StatelessWidget {
-  const RecapMakerApp({super.key});
-
+class App extends StatelessWidget {
+  const App({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(

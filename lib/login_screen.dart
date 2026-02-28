@@ -2,160 +2,142 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'theme.dart';
-import 'providers.dart';
-import 'main_shell.dart';
+import 'state.dart';
+import 'shell.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _S();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProviderStateMixin {
-  final _user = TextEditingController();
-  final _pass = TextEditingController();
-  bool _obscure = true;
-  late AnimationController _anim;
-  late Animation<double> _fade, _slide;
+class _S extends ConsumerState<LoginScreen> with TickerProviderStateMixin {
+  final _u = TextEditingController();
+  final _p = TextEditingController();
+  bool _hide = true;
+
+  late AnimationController _bg, _content;
+  late Animation<double> _bgScale, _fadeIn, _slideUp;
 
   @override
   void initState() {
     super.initState();
-    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
-    _fade = CurvedAnimation(parent: _anim, curve: Curves.easeOut);
-    _slide = Tween<double>(begin: 30, end: 0).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic));
-    _anim.forward();
+    _bg = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..forward();
+    _content = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _bgScale = Tween(begin: 1.3, end: 1.0).animate(CurvedAnimation(parent: _bg, curve: Curves.easeOutCubic));
+    _fadeIn = CurvedAnimation(parent: _content, curve: Curves.easeOut);
+    _slideUp = Tween(begin: 40.0, end: 0.0).animate(CurvedAnimation(parent: _content, curve: Curves.easeOutCubic));
+    Future.delayed(const Duration(milliseconds: 400), () => _content.forward());
   }
 
   @override
-  void dispose() { _anim.dispose(); _user.dispose(); _pass.dispose(); super.dispose(); }
+  void dispose() { _bg.dispose(); _content.dispose(); _u.dispose(); _p.dispose(); super.dispose(); }
 
   Future<void> _login() async {
-    if (_user.text.trim().isEmpty || _pass.text.trim().isEmpty) return;
-    final ok = await ref.read(authProvider.notifier).login(_user.text.trim(), _pass.text.trim());
+    if (_u.text.trim().isEmpty || _p.text.trim().isEmpty) return;
+    final ok = await ref.read(authProvider.notifier).login(_u.text.trim(), _p.text.trim());
     if (!mounted) return;
     if (ok) {
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          pageBuilder: (_, a, __) => const MainShell(),
-          transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
-          transitionDuration: const Duration(milliseconds: 400),
-        ),
-      );
-    } else {
-      final err = ref.read(authProvider).error ?? 'Error';
-      HapticFeedback.mediumImpact();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(err),
-        backgroundColor: AppTheme.red,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
+      Navigator.of(context).pushReplacement(PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 600),
+        pageBuilder: (_, a, __) => const Shell(),
+        transitionsBuilder: (_, anim, __, child) {
+          return FadeTransition(opacity: anim,
+            child: SlideTransition(
+              position: Tween(begin: const Offset(0, 0.05), end: Offset.zero)
+                .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+              child: child));
+        },
       ));
+    } else {
+      HapticFeedback.mediumImpact();
+      final err = ref.read(authProvider).error ?? 'Error';
+      ScaffoldMessenger.of(context).showSnackBar(_snack(err, C.rose));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final auth = ref.watch(authProvider);
-    final loading = auth.status == AuthStatus.loading;
-
+    final loading = ref.watch(authProvider).status == AuthStatus.loading;
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: C.bg0,
       body: Stack(children: [
-        // Background glow
-        Positioned(top: -100, left: -80, child: Container(
-          width: 300, height: 300,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(colors: [
-              AppTheme.primary.withOpacity(0.15),
-              Colors.transparent,
-            ]),
-          ),
-        )),
-        Positioned(bottom: -60, right: -60, child: Container(
-          width: 240, height: 240,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(colors: [
-              AppTheme.teal.withOpacity(0.08),
-              Colors.transparent,
-            ]),
-          ),
-        )),
+        // Animated mesh background
+        AnimatedBuilder(animation: _bgScale, builder: (_, __) =>
+          Transform.scale(scale: _bgScale.value, child: const MeshBg())),
+
+        // Noise texture overlay
+        Positioned.fill(child: Opacity(opacity: 0.03,
+          child: Container(decoration: const BoxDecoration(
+            image: DecorationImage(image: NetworkImage('https://grainy-gradients.vercel.app/noise.svg'), repeat: ImageRepeat.repeat))))),
+
         SafeArea(
-          child: AnimatedBuilder(
-            animation: _anim,
-            builder: (_, __) => Transform.translate(
-              offset: Offset(0, _slide.value),
-              child: FadeTransition(
-                opacity: _fade,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 70),
-                      // Logo
-                      Container(
-                        width: 64, height: 64,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [AppTheme.primary, AppTheme.primary2],
-                            begin: Alignment.topLeft, end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: [BoxShadow(color: AppTheme.primary.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 8))],
-                        ),
-                        child: const Icon(Icons.video_camera_back_rounded, color: Colors.white, size: 32),
-                      ),
-                      const SizedBox(height: 28),
-                      const Text('Recap Maker', style: TextStyle(
-                        color: AppTheme.textHi, fontSize: 32, fontWeight: FontWeight.w800, height: 1.1,
-                      )),
-                      const SizedBox(height: 6),
-                      const Text('Account နဲ့ Login ဝင်ပါ', style: TextStyle(
-                        color: AppTheme.textMid, fontSize: 16,
-                      )),
-                      const SizedBox(height: 48),
+          child: FadeTransition(opacity: _fadeIn,
+            child: AnimatedBuilder(animation: _slideUp, builder: (_, child) =>
+              Transform.translate(offset: Offset(0, _slideUp.value), child: child),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const SizedBox(height: 80),
 
-                      // Username
-                      _label('Username'),
-                      _field(controller: _user, hint: 'Username ထည့်ပါ',
-                        icon: Icons.person_outline_rounded, enabled: !loading),
-                      const SizedBox(height: 16),
+                  // Logo mark
+                  Row(children: [
+                    Container(width: 52, height: 52,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: C.grad1, begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [BoxShadow(color: C.violet.withOpacity(0.5), blurRadius: 24, offset: const Offset(0, 10))]),
+                      child: const Icon(Icons.video_camera_back_rounded, color: Colors.white, size: 26)),
+                    const SizedBox(width: 14),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Recap Maker', style: TextStyle(color: C.t1, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                      Text('Pro Video Editor', style: TextStyle(color: C.violet.withOpacity(0.8), fontSize: 12, fontWeight: FontWeight.w600)),
+                    ]),
+                  ]),
 
-                      // Password
-                      _label('Password'),
-                      _field(
-                        controller: _pass, hint: 'Password ထည့်ပါ',
-                        icon: Icons.lock_outline_rounded, enabled: !loading,
-                        obscure: _obscure,
-                        suffix: IconButton(
-                          icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                            color: AppTheme.textLow, size: 20),
-                          onPressed: () => setState(() => _obscure = !_obscure),
-                        ),
-                        onSubmit: (_) => _login(),
-                      ),
-                      const SizedBox(height: 36),
+                  const SizedBox(height: 60),
 
-                      // Button
-                      PrimaryButton(
-                        label: 'Login ဝင်မည်',
-                        icon: Icons.arrow_forward_rounded,
-                        loading: loading,
-                        onPressed: _login,
-                      ),
-                      const SizedBox(height: 24),
+                  // Title
+                  const Text('ကြへようこそ', style: TextStyle(color: C.t3, fontSize: 13, letterSpacing: 2)),
+                  const SizedBox(height: 6),
+                  const Text('Login ဝင်ပါ', style: TextStyle(color: C.t1, fontSize: 32, fontWeight: FontWeight.w900, height: 1.1)),
 
-                      Center(child: Text('Account မရှိသေးဘူးဆိုရင် Admin ကိုဆက်သွယ်ပါ',
-                        style: const TextStyle(color: AppTheme.textLow, fontSize: 12),
-                        textAlign: TextAlign.center)),
-                    ],
+                  const SizedBox(height: 40),
+
+                  // Username field
+                  _fieldLabel('Username'),
+                  _field(ctrl: _u, hint: 'Username ထည့်ပါ', icon: Icons.person_outline_rounded, enabled: !loading),
+                  const SizedBox(height: 16),
+
+                  // Password field
+                  _fieldLabel('Password'),
+                  _field(
+                    ctrl: _p, hint: 'Password ထည့်ပါ',
+                    icon: Icons.lock_outline_rounded, enabled: !loading,
+                    obscure: _hide,
+                    onSubmit: (_) => _login(),
+                    suffix: GestureDetector(
+                      onTap: () => setState(() => _hide = !_hide),
+                      child: Icon(_hide ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        color: C.t3, size: 18)),
                   ),
-                ),
+
+                  const SizedBox(height: 40),
+
+                  GradBtn(
+                    label: 'Login ဝင်မည်',
+                    icon: Icons.arrow_forward_rounded,
+                    colors: C.grad1,
+                    loading: loading,
+                    onTap: loading ? null : _login,
+                  ),
+
+                  const SizedBox(height: 24),
+                  Center(child: Text('Account မရှိဘူးဆိုရင် Admin ကိုဆက်သွယ်ပါ',
+                    style: const TextStyle(color: C.t3, fontSize: 12))),
+
+                  const SizedBox(height: 40),
+                ]),
               ),
             ),
           ),
@@ -164,39 +146,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
     );
   }
 
-  Widget _label(String t) => Padding(
+  Widget _fieldLabel(String t) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(t, style: const TextStyle(color: AppTheme.textMid, fontSize: 13, fontWeight: FontWeight.w600)),
-  );
+    child: Text(t, style: const TextStyle(color: C.t2, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5)));
 
   Widget _field({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    bool obscure = false,
-    bool enabled = true,
-    Widget? suffix,
-    ValueChanged<String>? onSubmit,
+    required TextEditingController ctrl, required String hint,
+    required IconData icon, bool obscure = false, bool enabled = true,
+    Widget? suffix, ValueChanged<String>? onSubmit,
   }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      enabled: enabled,
-      onSubmitted: onSubmit,
-      textInputAction: suffix == null ? TextInputAction.go : TextInputAction.next,
-      style: const TextStyle(color: AppTheme.textHi, fontSize: 15),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: AppTheme.textLow, fontSize: 14),
-        prefixIcon: Icon(icon, color: AppTheme.textLow, size: 20),
-        suffixIcon: suffix,
-        filled: true,
-        fillColor: AppTheme.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.border)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.border)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.primary, width: 1.5)),
+    return Container(
+      decoration: BoxDecoration(
+        color: C.glass, borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: C.bdr)),
+      child: TextField(
+        controller: ctrl, obscureText: obscure, enabled: enabled,
+        onSubmitted: onSubmit,
+        style: const TextStyle(color: C.t1, fontSize: 15),
+        decoration: InputDecoration(
+          hintText: hint, hintStyle: const TextStyle(color: C.t3, fontSize: 14),
+          prefixIcon: Icon(icon, color: C.t3, size: 18),
+          suffixIcon: suffix != null ? Padding(padding: const EdgeInsets.only(right: 12), child: suffix) : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        ),
       ),
     );
   }
 }
+
+SnackBar _snack(String msg, Color color) => SnackBar(
+  content: Text(msg, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+  backgroundColor: color, behavior: SnackBarBehavior.floating,
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  margin: const EdgeInsets.all(16));
