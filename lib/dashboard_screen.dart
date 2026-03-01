@@ -1,10 +1,10 @@
-import 'package:video_player/video_player.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:video_player/video_player.dart';
 import 'theme.dart';
 import 'state.dart';
 import 'api_client.dart';
@@ -24,8 +24,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
   final _aiCtrl = TextEditingController();
 
   String? _vfname;
-  String? _previewUrl; // video preview URL after upload
-  File? _logoFile;
+  String? _previewUrl;
 
   // Effects
   bool _flip = false, _speed = false, _pitch = false, _noise = false, _blur = false;
@@ -35,6 +34,8 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
   Color _wmColor = Colors.white, _wmBoxColor = Colors.black;
   double _wmBoxOp = 0.5;
   String _wmPos = 'bottom_center';
+  // Logo
+  File? _logoFile;
   // AI
   String _voice = 'male';
 
@@ -53,43 +54,51 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
     _entryCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
     _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
     _entrySlide = Tween(begin: const Offset(0, 0.04), end: Offset.zero)
-      .animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+        .animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
     _entryCtrl.forward();
   }
 
   @override
-  void dispose() { _poll?.cancel(); _entryCtrl.dispose(); _urlCtrl.dispose(); _wmCtrl.dispose(); _aiCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _poll?.cancel();
+    _entryCtrl.dispose();
+    _urlCtrl.dispose();
+    _wmCtrl.dispose();
+    _aiCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickVideo() async {
     final r = await FilePicker.platform.pickFiles(type: FileType.video);
     if (r?.files.single.path == null) return;
-    setState(() { _msg = 'Upload လုပ်နေသည်...'; _vfname = null; });
+    setState(() { _msg = 'Upload လုပ်နေသည်...'; _vfname = null; _previewUrl = null; });
     try {
       final f = await Uploader.upload(File(r!.files.single.path!), ref);
-      setState(() {
-        _vfname = f;
-        _previewUrl = '${Api().baseUrl}/stream-file/$f';
-        _msg = '✅ Video တင်ပြီးပြီ';
-      });
+      final url = '${_api.baseUrl}/stream-file/$f';
+      setState(() { _vfname = f; _previewUrl = url; _msg = '✅ Video တင်ပြီးပြီ'; });
       _reAnalyze();
-    } catch (e) { setState(() => _msg = '❌ $e'); }
+    } catch (e) {
+      setState(() => _msg = '❌ $e');
+    }
   }
 
   Future<void> _fromUrl() async {
     final url = _urlCtrl.text.trim();
     if (url.isEmpty) return;
-    setState(() { _urlLoad = true; _msg = 'Download ဆွဲနေသည်...'; });
+    setState(() { _urlLoad = true; _msg = 'Download ဆွဲနေသည်...'; _previewUrl = null; });
     try {
       final r = await _api.downloadUrl(url);
       if (r['status'] == 'success') {
-        setState(() {
-          _vfname = r['filename'];
-          _previewUrl = '${Api().baseUrl}/stream-file/${r['filename']}';
-          _msg = '✅ Download ပြီးပြီ';
-        });
+        final fname = r['filename'] as String;
+        final surl = '${_api.baseUrl}/stream-file/$fname';
+        setState(() { _vfname = fname; _previewUrl = surl; _msg = '✅ Download ပြီးပြီ'; });
         _reAnalyze();
-      } else { setState(() => _msg = '❌ ${r['message']}'); }
-    } catch (e) { setState(() => _msg = '❌ $e'); }
+      } else {
+        setState(() => _msg = '❌ ${r['message']}');
+      }
+    } catch (e) {
+      setState(() => _msg = '❌ $e');
+    }
     setState(() => _urlLoad = false);
   }
 
@@ -108,8 +117,10 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
       final d = <String, String>{
         'video_filename': _vfname!, 'blur_areas': '[]',
         'logo_x': '0', 'logo_y': '0', 'logo_w': '0', 'logo_h': '0',
-        if (_flip) 'bypass_flip': 'on', if (_speed) 'bypass_speed': 'on',
-        if (_pitch) 'bypass_pitch': 'on', if (_noise) 'bypass_noise': 'on',
+        if (_flip) 'bypass_flip': 'on',
+        if (_speed) 'bypass_speed': 'on',
+        if (_pitch) 'bypass_pitch': 'on',
+        if (_noise) 'bypass_noise': 'on',
         if (_blur) 'blur_enabled': 'on',
         if (_wmCtrl.text.isNotEmpty) 'text_watermark_text': _wmCtrl.text,
         'text_watermark_size': _wmSize.toString(),
@@ -133,12 +144,14 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
       } else {
         setState(() { _msg = '❌ ${r['message']}'; _processing = false; });
       }
-    } catch (e) { setState(() { _msg = '❌ $e'; _processing = false; }); }
+    } catch (e) {
+      setState(() { _msg = '❌ $e'; _processing = false; });
+    }
   }
 
   void _startPoll() {
     _poll?.cancel();
-    _poll = Timer.periodic(const Duration(seconds: 4), (_) async {
+    _poll = Timer.periodic(AppConstants.pollInterval, (_) async {
       if (_jobId == null) return;
       try {
         final d = await _api.jobStatus(_jobId!);
@@ -175,27 +188,22 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(userProvider);
-
     return Scaffold(
       backgroundColor: C.bg0,
       body: FadeTransition(opacity: _entryFade,
         child: SlideTransition(position: _entrySlide,
           child: CustomScrollView(slivers: [
-            // ── App Bar ─────────────────────────────
+            // AppBar
             SliverAppBar(
-              floating: true,
-              backgroundColor: C.bg0,
+              floating: true, backgroundColor: C.bg0,
               title: Row(children: [
                 Container(width: 32, height: 32,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: C.grad1),
-                    borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad1), borderRadius: BorderRadius.circular(10)),
                   child: const Icon(Icons.video_camera_back_rounded, color: Colors.white, size: 16)),
                 const SizedBox(width: 10),
                 const Text('Recap Maker', style: TextStyle(color: C.t1, fontWeight: FontWeight.w800, fontSize: 17)),
               ]),
               actions: [
-                // Coin badge
                 user.when(
                   data: (u) => GestureDetector(
                     onTap: () => showModalBottomSheet(
@@ -206,21 +214,16 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
                       margin: const EdgeInsets.only(right: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: C.gold.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(20),
+                        color: C.gold.withOpacity(0.12), borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: C.gold.withOpacity(0.25))),
                       child: Row(children: [
                         const Icon(Icons.monetization_on_rounded, color: C.gold, size: 14),
                         const SizedBox(width: 5),
                         Text('${u.coins}', style: const TextStyle(color: C.gold, fontWeight: FontWeight.w800, fontSize: 13)),
-                      ]),
-                    ),
-                  ),
+                      ]))),
                   loading: () => const SizedBox(width: 60),
-                  error: (_, __) => const SizedBox(),
-                ),
-              ],
-            ),
+                  error: (_, __) => const SizedBox()),
+              ]),
 
             SliverToBoxAdapter(child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
@@ -233,21 +236,22 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
 
                 const SizedBox(height: 12),
 
-                // ── Video Source Card ─────────────────
+                // Video source card
                 _buildVideoSource(),
 
-                const SizedBox(height: 12),
-
-                // ── Video Preview ─────────────────────
-                if (_previewUrl != null)
-                  _VideoPreview(
+                // ── LIVE VIDEO PREVIEW ─────────────────
+                if (_previewUrl != null) ...[
+                  const SizedBox(height: 12),
+                  LiveVideoPreview(
                     url: _previewUrl!,
                     blurEnabled: _blur,
+                    logoFile: _logoFile,
                   ),
+                ],
 
                 const SizedBox(height: 12),
 
-                // ── Effects Card ──────────────────────
+                // Effects
                 GlassCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const SectionHdr('EFFECTS', icon: Icons.tune_rounded),
                   ToggleRow(label: 'Video ကိုလှန်မည်', icon: Icons.flip_rounded, value: _flip, onChanged: (v) => setState(() => _flip = v)),
@@ -259,7 +263,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
 
                 const SizedBox(height: 12),
 
-                // ── Watermark Card ────────────────────
+                // Watermark
                 GlassCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const SectionHdr('WATERMARK', icon: Icons.text_fields_rounded),
                   _textField(_wmCtrl, 'Channel အမည် ထည့်ပါ', Icons.edit_rounded),
@@ -288,7 +292,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
 
                 const SizedBox(height: 12),
 
-                // ── Logo Card ─────────────────────────
+                // Logo
                 GlassCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const SectionHdr('LOGO', icon: Icons.image_rounded, color: C.cyan),
                   OutlineBtn(
@@ -300,13 +304,12 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
                     }),
                   if (_logoFile != null) Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text('✅ ${_logoFile!.path.split('/').last}',
-                      style: const TextStyle(color: C.mint, fontSize: 11))),
+                    child: Text('✅ ${_logoFile!.path.split('/').last}', style: const TextStyle(color: C.mint, fontSize: 11))),
                 ])),
 
                 const SizedBox(height: 12),
 
-                // ── AI Voice Card ─────────────────────
+                // AI Voice
                 GlassCard(
                   borderColor: C.violet.withOpacity(0.3),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -323,9 +326,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
                             Icon(Icons.refresh_rounded, color: C.violet, size: 12),
                             SizedBox(width: 4),
                             Text('AI ပြန်ယူ', style: TextStyle(color: C.violet, fontSize: 11, fontWeight: FontWeight.w700)),
-                          ]),
-                        ),
-                      ),
+                          ]))),
                     ]),
                     TextField(
                       controller: _aiCtrl, maxLines: 4,
@@ -335,11 +336,10 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
                         hintStyle: const TextStyle(color: C.t3, fontSize: 12),
                         filled: true, fillColor: C.glass2,
                         contentPadding: const EdgeInsets.all(12),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: C.bdr)),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: C.bdr)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: C.bdr)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: C.bdr)),
                         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: C.violet)),
-                      ),
-                    ),
+                      )),
                     const SizedBox(height: 10),
                     Row(children: [
                       Expanded(child: _voiceChip('male', '👨 အမျိုးသား')),
@@ -366,28 +366,26 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
                 ),
               ]),
             )),
-          ]),
-        ),
-      ),
+          ]))),
     );
   }
 
   Widget _buildVideoSource() {
     return GlassCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const SectionHdr('VIDEO SOURCE', icon: Icons.video_file_rounded),
-
-      OutlineBtn(label: 'Video File တင်ရန်', icon: Icons.cloud_upload_rounded,
-        color: C.violet, onTap: _processing ? null : _pickVideo),
-
+      OutlineBtn(
+        label: 'Video File တင်ရန်',
+        icon: Icons.cloud_upload_rounded,
+        color: C.violet,
+        onTap: _processing ? null : _pickVideo),
       const SizedBox(height: 12),
       Row(children: [
         const Expanded(child: Divider(color: C.bdr)),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text('သို့မဟုတ်', style: const TextStyle(color: C.t3, fontSize: 11))),
+        const Padding(padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Text('သို့မဟုတ်', style: TextStyle(color: C.t3, fontSize: 11))),
         const Expanded(child: Divider(color: C.bdr)),
       ]),
       const SizedBox(height: 12),
-
       Row(children: [
         Expanded(child: _textField(_urlCtrl, 'YouTube / TikTok / Facebook Link', Icons.link_rounded)),
         const SizedBox(width: 8),
@@ -398,33 +396,27 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
             decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad1), borderRadius: BorderRadius.circular(12)),
             child: _urlLoad
               ? const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-              : const Icon(Icons.download_rounded, color: Colors.white, size: 20)),
-        ),
+              : const Icon(Icons.download_rounded, color: Colors.white, size: 20))),
       ]),
 
       // Upload progress
       Consumer(builder: (_, ref, __) {
         final up = ref.watch(uploadProvider);
-        if (!up.active) {
-          if (_msg.isEmpty) return const SizedBox();
-          return _statusBadge(_msg);
-        }
-        return Column(children: [
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: ClipRRect(
+        if (up.active) return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(children: [
+            ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: up.progress,
-                backgroundColor: C.bdr, minHeight: 5,
-                valueColor: const AlwaysStoppedAnimation(C.violet)))),
-            const SizedBox(width: 10),
-            Text('${(up.progress * 100).toInt()}%',
-              style: const TextStyle(color: C.violet, fontSize: 11, fontWeight: FontWeight.w700)),
-          ]),
-          const SizedBox(height: 4),
-          Text('${up.chunk}/${up.total} chunks', style: const TextStyle(color: C.t3, fontSize: 10)),
-        ]);
+                value: up.progress, backgroundColor: C.bdr, minHeight: 6,
+                valueColor: const AlwaysStoppedAnimation(C.violet))),
+            const SizedBox(height: 4),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('${up.chunk}/${up.total} chunks', style: const TextStyle(color: C.t3, fontSize: 10)),
+              Text('${(up.progress * 100).toInt()}%', style: const TextStyle(color: C.violet, fontSize: 11, fontWeight: FontWeight.w700)),
+            ]),
+          ]));
+        return const SizedBox();
       }),
 
       if (_msg.isNotEmpty && !ref.watch(uploadProvider).active) ...[
@@ -441,8 +433,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
             const Icon(Icons.check_circle_rounded, color: C.mint, size: 13),
             const SizedBox(width: 6),
             Expanded(child: Text(_vfname!, style: const TextStyle(color: C.t2, fontSize: 11), overflow: TextOverflow.ellipsis)),
-          ]),
-        ),
+          ])),
       ],
     ]));
   }
@@ -461,15 +452,12 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
           const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: C.violet, strokeWidth: 2)),
           const SizedBox(width: 8),
         ],
-        Expanded(child: Text(msg, style: TextStyle(
-          color: isOk ? C.mint : isErr ? C.rose : C.t2, fontSize: 12))),
-      ]),
-    );
+        Expanded(child: Text(msg, style: TextStyle(color: isOk ? C.mint : isErr ? C.rose : C.t2, fontSize: 12))),
+      ]));
   }
 
   Widget _broadcast(String msg) => Container(
-    width: double.infinity,
-    margin: const EdgeInsets.only(bottom: 4),
+    width: double.infinity, margin: const EdgeInsets.only(bottom: 4),
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
     decoration: BoxDecoration(
       color: C.violet.withOpacity(0.08), borderRadius: BorderRadius.circular(14),
@@ -481,7 +469,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
     ]));
 
   Widget _freeBadge(int n) => Container(
-    width: double.infinity,
+    width: double.infinity, margin: const EdgeInsets.only(bottom: 4),
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
     decoration: BoxDecoration(
       color: C.mint.withOpacity(0.07), borderRadius: BorderRadius.circular(12),
@@ -503,9 +491,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
           hintText: hint, hintStyle: const TextStyle(color: C.t3, fontSize: 12),
           prefixIcon: Icon(icon, color: C.t3, size: 16),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
-      ),
-    );
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12))));
   }
 
   Widget _colorSwatch(String label, Color cur, ValueChanged<Color> cb) {
@@ -515,8 +501,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
       GestureDetector(
         onTap: () => _pickColor(cur, cb),
         child: Container(height: 38,
-          decoration: BoxDecoration(color: cur, borderRadius: BorderRadius.circular(10), border: Border.all(color: C.bdr))),
-      ),
+          decoration: BoxDecoration(color: cur, borderRadius: BorderRadius.circular(10), border: Border.all(color: C.bdr)))),
     ]);
   }
 
@@ -545,9 +530,7 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
           boxShadow: on ? [BoxShadow(color: C.violet.withOpacity(0.3), blurRadius: 10)] : []),
         child: Center(child: Text(label, style: TextStyle(
           color: on ? Colors.white : C.t2, fontSize: 13,
-          fontWeight: on ? FontWeight.w700 : FontWeight.w400))),
-      ),
-    );
+          fontWeight: on ? FontWeight.w700 : FontWeight.w400)))));
   }
 
   Future<void> _pickColor(Color cur, ValueChanged<Color> cb) async {
@@ -562,175 +545,204 @@ class _DS extends ConsumerState<DashboardScreen> with SingleTickerProviderStateM
           child: AnimatedContainer(duration: const Duration(milliseconds: 150),
             width: 46, height: 46,
             decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: c == cur ? C.violet : C.bdr, width: c == cur ? 2.5 : 1))),
-        )).toList()),
-    ));
+              border: Border.all(color: c == cur ? C.violet : C.bdr, width: c == cur ? 2.5 : 1))))).toList())));
     if (picked != null) cb(picked);
   }
 }
 
-// ── Video Preview Widget ──────────────────────────
-class _VideoPreview extends StatefulWidget {
+// ══════════════════════════════════════════════════
+// LIVE VIDEO PREVIEW — with drag blur + logo overlay
+// ══════════════════════════════════════════════════
+class LiveVideoPreview extends StatefulWidget {
   final String url;
   final bool blurEnabled;
-  const _VideoPreview({required this.url, required this.blurEnabled});
+  final File? logoFile;
+  const LiveVideoPreview({super.key, required this.url, required this.blurEnabled, this.logoFile});
   @override
-  State<_VideoPreview> createState() => _VPState();
+  State<LiveVideoPreview> createState() => _LVPState();
 }
 
-class _VPState extends State<_VideoPreview> {
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(12),
-      borderColor: C.violet.withOpacity(0.25),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          const Icon(Icons.play_circle_rounded, color: C.violet, size: 14),
-          const SizedBox(width: 6),
-          const Text('VIDEO PREVIEW', style: TextStyle(
-            color: C.violet, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
-          const Spacer(),
-          if (widget.blurEnabled)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: C.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: C.rose.withOpacity(0.3))),
-              child: const Text('BLUR ON', style: TextStyle(color: C.rose, fontSize: 9, fontWeight: FontWeight.w800))),
-        ]),
-        const SizedBox(height: 10),
-        // Tap to open full player
-        GestureDetector(
-          onTap: () => Navigator.of(context).push(PageRouteBuilder(
-            opaque: false,
-            barrierColor: Colors.black87,
-            barrierDismissible: true,
-            transitionDuration: const Duration(milliseconds: 350),
-            pageBuilder: (_, __, ___) => _FullVideoPlayer(url: widget.url),
-            transitionsBuilder: (_, anim, __, child) => FadeTransition(
-              opacity: anim,
-              child: ScaleTransition(
-                scale: Tween(begin: 0.93, end: 1.0)
-                  .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-                child: child)),
-          )),
-          child: Container(
-            height: 180,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: C.bdr)),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Stack(alignment: Alignment.center, children: [
-                // Dark placeholder bg
-                Container(color: C.bg1),
-                // Play icon overlay
-                Container(
-                  width: 56, height: 56,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: C.grad1),
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: C.violet.withOpacity(0.5), blurRadius: 20)]),
-                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32)),
-                // Tap hint
-                Positioned(bottom: 10, right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
-                    child: const Text('Tap to preview', style: TextStyle(color: Colors.white70, fontSize: 10)))),
-              ]),
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
-}
+class _LVPState extends State<LiveVideoPreview> {
+  VideoPlayerController? _vpc;
+  bool _ready = false;
+  double _aspectRatio = 9 / 16;
 
-// ── Full Screen Video Player ──────────────────────
-class _FullVideoPlayer extends StatefulWidget {
-  final String url;
-  const _FullVideoPlayer({required this.url});
-  @override
-  State<_FullVideoPlayer> createState() => _FVP();
-}
+  // Blur box drag
+  Offset _blurPos = const Offset(40, 80);
+  Size _blurSize = const Size(120, 70);
 
-class _FVP extends State<_FullVideoPlayer> {
-  late VideoPlayerController _vpc;
-  bool _ready = false, _err = false;
+  // Logo drag
+  Offset _logoPos = const Offset(10, 10);
+  Size _logoSize = const Size(80, 80);
 
   @override
   void initState() {
     super.initState();
-    _vpc = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (mounted) { setState(() => _ready = true); _vpc.play(); }
-      }).catchError((_) { if (mounted) setState(() => _err = true); });
-    _vpc.setLooping(false);
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    try {
+      _vpc = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await _vpc!.initialize();
+      if (mounted) {
+        setState(() {
+          _ready = true;
+          final v = _vpc!.value;
+          if (v.size.width > 0 && v.size.height > 0) {
+            _aspectRatio = v.size.width / v.size.height;
+          }
+        });
+        _vpc!.play();
+        _vpc!.setLooping(true);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _ready = false);
+    }
   }
 
   @override
-  void dispose() { _vpc.dispose(); super.dispose(); }
+  void dispose() { _vpc?.dispose(); super.dispose(); }
+
+  @override
+  void didUpdateWidget(LiveVideoPreview old) {
+    super.didUpdateWidget(old);
+    if (old.url != widget.url) {
+      _vpc?.dispose();
+      _ready = false;
+      _initPlayer();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(children: [
-        if (_ready) Center(child: GestureDetector(
-          onTap: () => setState(() => _vpc.value.isPlaying ? _vpc.pause() : _vpc.play()),
-          child: AspectRatio(aspectRatio: _vpc.value.aspectRatio, child: VideoPlayer(_vpc)))),
-        if (!_ready && !_err) const Center(child: CircularProgressIndicator(color: C.violet, strokeWidth: 2.5)),
-        if (_err) Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.error_outline_rounded, color: C.rose, size: 48),
-          const SizedBox(height: 12),
-          const Text('Video ဖွင့်မရပါ', style: TextStyle(color: C.t1, fontSize: 16)),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () { Clipboard.setData(ClipboardData(text: widget.url)); Navigator.pop(context); },
-            child: Container(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad1), borderRadius: BorderRadius.circular(12)),
-              child: const Text('Link ကူးမည်', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)))),
-        ])),
-        if (_ready) Positioned(bottom: 0, left: 0, right: 0,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
-            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
-              colors: [Colors.transparent, Colors.black.withOpacity(0.8)])),
-            child: Column(children: [
-              ValueListenableBuilder(valueListenable: _vpc, builder: (_, v, __) {
-                final pos = v.position.inMilliseconds.toDouble();
-                final dur = v.duration.inMilliseconds.toDouble();
-                return Column(children: [
-                  SliderTheme(data: SliderThemeData(trackHeight: 3,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    activeTrackColor: C.violet, inactiveTrackColor: Colors.white24, thumbColor: Colors.white),
-                    child: Slider(value: dur > 0 ? (pos/dur).clamp(0.0,1.0) : 0,
-                      onChanged: (val) => _vpc.seekTo(Duration(milliseconds: (val*dur).toInt())))),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text(_fmt(v.position), style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                    Text(_fmt(v.duration), style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                  ]),
-                ]);
-              }),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () => setState(() => _vpc.value.isPlaying ? _vpc.pause() : _vpc.play()),
-                child: Container(width: 52, height: 52,
-                  decoration: BoxDecoration(gradient: const LinearGradient(colors: C.grad1), shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: C.violet.withOpacity(0.5), blurRadius: 16)]),
-                  child: ValueListenableBuilder(valueListenable: _vpc, builder: (_, v, __) =>
-                    Icon(v.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 28)))),
-            ]))),
-        SafeArea(child: Padding(padding: const EdgeInsets.all(8),
-          child: GestureDetector(onTap: () => Navigator.pop(context),
-            child: Container(width: 38, height: 38,
-              decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-              child: const Icon(Icons.close_rounded, color: Colors.white, size: 20))))),
-      ]),
-    );
+    return GlassCard(
+      padding: const EdgeInsets.all(10),
+      borderColor: C.violet.withOpacity(0.3),
+      child: Column(children: [
+        Row(children: [
+          const Icon(Icons.live_tv_rounded, color: C.violet, size: 13),
+          const SizedBox(width: 6),
+          const Text('LIVE PREVIEW', style: TextStyle(color: C.violet, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+          const Spacer(),
+          if (widget.blurEnabled)
+            Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(color: C.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: C.rose.withOpacity(0.3))),
+              child: const Text('DRAG BLUR', style: TextStyle(color: C.rose, fontSize: 9, fontWeight: FontWeight.w800))),
+          if (widget.logoFile != null) ...[
+            const SizedBox(width: 6),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(color: C.cyan.withOpacity(0.1), borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: C.cyan.withOpacity(0.3))),
+              child: const Text('DRAG LOGO', style: TextStyle(color: C.cyan, fontSize: 9, fontWeight: FontWeight.w800))),
+          ],
+        ]),
+        const SizedBox(height: 8),
+
+        // Video container — ratio-aware
+        AspectRatio(
+          aspectRatio: _aspectRatio,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: LayoutBuilder(builder: (ctx, box) {
+              final w = box.maxWidth;
+              final h = box.maxHeight;
+              return Stack(clipBehavior: Clip.hardEdge, children: [
+                // Video
+                if (_ready)
+                  VideoPlayer(_vpc!)
+                else
+                  Container(color: C.bg1,
+                    child: const Center(child: CircularProgressIndicator(color: C.violet, strokeWidth: 2))),
+
+                // Blur overlay box (draggable)
+                if (widget.blurEnabled)
+                  Positioned(
+                    left: _blurPos.dx.clamp(0, w - _blurSize.width),
+                    top: _blurPos.dy.clamp(0, h - _blurSize.height),
+                    child: GestureDetector(
+                      onPanUpdate: (d) => setState(() {
+                        _blurPos = Offset(
+                          (_blurPos.dx + d.delta.dx).clamp(0, w - _blurSize.width),
+                          (_blurPos.dy + d.delta.dy).clamp(0, h - _blurSize.height));
+                      }),
+                      child: Container(
+                        width: _blurSize.width, height: _blurSize.height,
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: C.rose.withOpacity(0.8), width: 1.5)),
+                        child: const Center(
+                          child: Icon(Icons.blur_on_rounded, color: C.rose, size: 20)),
+                      ))),
+
+                // Logo overlay (draggable)
+                if (widget.logoFile != null)
+                  Positioned(
+                    left: _logoPos.dx.clamp(0, w - _logoSize.width),
+                    top: _logoPos.dy.clamp(0, h - _logoSize.height),
+                    child: GestureDetector(
+                      onPanUpdate: (d) => setState(() {
+                        _logoPos = Offset(
+                          (_logoPos.dx + d.delta.dx).clamp(0, w - _logoSize.width),
+                          (_logoPos.dy + d.delta.dy).clamp(0, h - _logoSize.height));
+                      }),
+                      child: Container(
+                        width: _logoSize.width, height: _logoSize.height,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: C.cyan.withOpacity(0.6), width: 1.5),
+                          borderRadius: BorderRadius.circular(4)),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: Image.file(widget.logoFile!, fit: BoxFit.contain))))),
+
+                // Play/pause tap
+                Positioned.fill(child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    if (_vpc == null) return;
+                    setState(() => _vpc!.value.isPlaying ? _vpc!.pause() : _vpc!.play());
+                  })),
+
+                // Pause icon hint
+                if (_ready)
+                  Positioned(bottom: 6, right: 6,
+                    child: ValueListenableBuilder(valueListenable: _vpc!, builder: (_, v, __) =>
+                      AnimatedOpacity(
+                        opacity: v.isPlaying ? 0.0 : 0.8,
+                        duration: const Duration(milliseconds: 200),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                          child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 16))))),
+              ]);
+            })),
+        ),
+
+        // Controls row
+        if (_ready) Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: ValueListenableBuilder(valueListenable: _vpc!, builder: (_, v, __) {
+            final pos = v.position.inMilliseconds.toDouble();
+            final dur = v.duration.inMilliseconds.toDouble();
+            return Column(children: [
+              SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 2,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                  activeTrackColor: C.violet, inactiveTrackColor: C.bdr, thumbColor: Colors.white,
+                  overlayShape: SliderComponentShape.noOverlay),
+                child: Slider(
+                  value: dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0,
+                  onChanged: (val) => _vpc!.seekTo(Duration(milliseconds: (val * dur).toInt())))),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text(_fmt(v.position), style: const TextStyle(color: C.t3, fontSize: 10)),
+                Text(_fmt(v.duration), style: const TextStyle(color: C.t3, fontSize: 10)),
+              ]),
+            ]);
+          })),
+      ]));
   }
 
   String _fmt(Duration d) {
