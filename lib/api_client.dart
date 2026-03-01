@@ -98,14 +98,17 @@ class Api {
   Future<Map<String, dynamic>> downloadUrl(String url) async {
     final r = await dio.post('/download-from-url',
       data: {'url': url},
-      options: Options(contentType: Headers.formUrlEncodedContentType));
-    return r.data as Map<String, dynamic>;
+      options: Options(contentType: 'application/json'));
+    // Safe cast - server might return string on error
+    if (r.data is Map<String, dynamic>) return r.data as Map<String, dynamic>;
+    return {'status': 'error', 'message': r.data.toString()};
   }
 
   Future<Map<String, dynamic>> processVideo(Map<String, String> d) async {
     final r = await dio.post('/process', data: d,
       options: Options(contentType: Headers.formUrlEncodedContentType));
-    return r.data as Map<String, dynamic>;
+    if (r.data is Map<String, dynamic>) return r.data as Map<String, dynamic>;
+    return {'status': 'error', 'message': r.data.toString()};
   }
 
   Future<Map<String, dynamic>> processSubtitle(Map<String, String> d) async {

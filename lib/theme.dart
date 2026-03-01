@@ -9,15 +9,15 @@ import 'dart:ui';
 
 class C {
   // Backgrounds
-  static const bg0    = Color(0xFF040509);
-  static const bg1    = Color(0xFF080B12);
-  static const bg2    = Color(0xFF0D1018);
-  static const glass  = Color(0x14FFFFFF);
-  static const glass2 = Color(0x0AFFFFFF);
+  static const bg0    = Color(0xFF070A12);
+  static const bg1    = Color(0xFF0B0F1A);
+  static const bg2    = Color(0xFF101420);
+  static const glass  = Color(0x1AFFFFFF);
+  static const glass2 = Color(0x10FFFFFF);
 
   // Borders
-  static const bdr    = Color(0x18FFFFFF);
-  static const bdr2   = Color(0x0CFFFFFF);
+  static const bdr    = Color(0x22FFFFFF);
+  static const bdr2   = Color(0x14FFFFFF);
 
   // Accents
   static const violet = Color(0xFF7C5CFC);
@@ -28,9 +28,9 @@ class C {
   static const mint   = Color(0xFF00E299);
 
   // Text
-  static const t1 = Color(0xFFF0F2FF);
-  static const t2 = Color(0xFF8890B8);
-  static const t3 = Color(0xFF3D4268);
+  static const t1 = Color(0xFFF5F7FF);
+  static const t2 = Color(0xFFBCC3E0);
+  static const t3 = Color(0xFF7B84A8);
 
   // Gradients
   static const grad1 = [Color(0xFF7C5CFC), Color(0xFF4F35D6)];
@@ -78,9 +78,10 @@ class GlassCard extends StatelessWidget {
         child: Container(
           padding: padding ?? const EdgeInsets.all(18),
           decoration: BoxDecoration(
+            color: const Color(0xFF0D1422),
             gradient: gradient ?? const LinearGradient(
               begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [Color(0x18FFFFFF), Color(0x06FFFFFF)],
+              colors: [Color(0x20FFFFFF), Color(0x08FFFFFF)],
             ),
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(color: borderColor ?? C.bdr, width: 1),
@@ -228,7 +229,7 @@ class ToggleRow extends StatelessWidget {
         Icon(icon, size: 16, color: value ? c : C.t3),
         const SizedBox(width: 10),
         Expanded(child: Text(label, style: TextStyle(
-          color: value ? C.t1 : C.t2, fontSize: 13,
+          color: value ? const Color(0xFFF5F7FF) : const Color(0xFFBCC3E0), fontSize: 13,
           fontWeight: value ? FontWeight.w600 : FontWeight.w400))),
         Transform.scale(scale: 0.85, child: Switch.adaptive(
           value: value, onChanged: onChanged,
