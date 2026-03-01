@@ -92,13 +92,27 @@ class Api {
   }
 
   Future<void> uploadChunk(String id, int idx, List<int> bytes) async {
-    final d = await _client;
-    await d.post('/upload-chunk',
-      data: FormData.fromMap({
-        'upload_id': id,
-        'chunk_index': idx.toString(),
-        'chunk': MultipartFile.fromBytes(bytes, filename: 'chunk_$idx'),
-      }));
+    const maxRetry = 3;
+    for (int attempt = 1; attempt <= maxRetry; attempt++) {
+      try {
+        final d = await _client;
+        final r = await d.post('/upload-chunk',
+          data: FormData.fromMap({
+            'upload_id': id,
+            'chunk_index': idx.toString(),
+            'chunk': MultipartFile.fromBytes(bytes, filename: 'chunk_\$idx'),
+          }),
+          options: Options(
+            sendTimeout: const Duration(minutes: 2),
+            receiveTimeout: const Duration(minutes: 2),
+          ));
+        if (r.statusCode != null && r.statusCode! < 400) return;
+        throw 'Chunk \$idx failed: HTTP \${r.statusCode}';
+      } catch (e) {
+        if (attempt == maxRetry) rethrow;
+        await Future.delayed(Duration(seconds: attempt * 2)); // backoff
+      }
+    }
   }
 
   Future<String> uploadComplete(String id) async {
