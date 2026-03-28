@@ -1,0 +1,8 @@
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.recapmaker.app.data.model.** { *; }
+-keep class com.recapmaker.app.data.api.** { *; }
+-keep class com.google.gson.** { *; }
+-keepclassmembers class * { @com.google.gson.annotations.SerializedName <fields>; }
+-dontwarn okhttp3.**
+-dontwarn okio.**
