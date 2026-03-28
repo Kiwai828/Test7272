@@ -12,6 +12,7 @@ import com.recapmaker.app.data.model.PricingTier
 import com.recapmaker.app.data.repository.MainRepository
 import com.recapmaker.app.data.repository.Result
 import com.recapmaker.app.util.copyToFile
+import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import java.io.File
@@ -22,7 +23,7 @@ data class SubtitleState(
     val pricingTiers: List<PricingTier> = emptyList(),
     val videoUri: Uri? = null, val videoFilename: String? = null,
     val videoDuration: Int = 0,
-    val urlInput: String = "", val isDownloading: Boolean = false,
+    val urlInput: String = "", val isUploading: Boolean = false,
     val fontColor: String = "#FFFFFF", val fontSize: Float = 16f,
     val boxEnabled: Boolean = true, val position: String = "bottom_center",
     val flipEnabled: Boolean = false, val speedEnabled: Boolean = false,
@@ -31,20 +32,15 @@ data class SubtitleState(
 )
 
 @HiltViewModel
-class SubtitleViewModel @Inject constructor(
-    private val repo: MainRepository,
-) : ViewModel() {
+class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : ViewModel() {
     var state by mutableStateOf(SubtitleState()); private set
 
-    init { loadUserInfo() }
+    init { loadCoins() }
 
-    private fun loadUserInfo() {
+    private fun loadCoins() {
         viewModelScope.launch {
             when (val r = repo.getUserInfo()) {
-                is Result.Success -> state = state.copy(
-                    gold = r.data.gold, silver = r.data.silver,
-                    pricingTiers = r.data.pricing_tiers,
-                )
+                is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver, pricingTiers = r.data.pricing_tiers ?: emptyList())
                 is Result.Error -> {}
             }
         }
@@ -52,65 +48,54 @@ class SubtitleViewModel @Inject constructor(
 
     fun onVideoSelected(uri: Uri, context: Context) {
         viewModelScope.launch {
-            state = state.copy(videoUri = uri, isDownloading = true, error = null)
+            state = state.copy(videoUri = uri, isUploading = true, error = null)
             try {
-                val mmr = MediaMetadataRetriever()
-                mmr.setDataSource(context, uri)
-                val durationMs = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0
+                val mmr = MediaMetadataRetriever(); mmr.setDataSource(context, uri)
+                val dur = (mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000
                 mmr.release()
-
-                val tempFile = File(context.cacheDir, "sub_upload_${System.currentTimeMillis()}.mp4")
-                uri.copyToFile(context, tempFile)
-
-                when (val r = repo.uploadVideo(tempFile)) {
-                    is Result.Success -> state = state.copy(
-                        videoFilename = r.data.filename,
-                        videoDuration = (durationMs / 1000).toInt(),
-                        isDownloading = false,
-                    )
-                    is Result.Error -> state = state.copy(isDownloading = false, error = r.message)
-                }
-                tempFile.delete()
-            } catch (e: Exception) {
-                state = state.copy(isDownloading = false, error = "Upload failed: ${e.message}")
+                state = state.copy(videoDuration = dur.toInt(), videoFilename = uri.lastPathSegment ?: "video.mp4", isUploading = false)
+            } catch (_: Exception) {
+                state = state.copy(isUploading = false, videoFilename = uri.lastPathSegment)
             }
         }
     }
 
-    fun updateUrl(url: String) { state = state.copy(urlInput = url) }
-
+    fun updateUrl(v: String) { state = state.copy(urlInput = v) }
     fun downloadFromUrl() {
         if (state.urlInput.isBlank()) return
         viewModelScope.launch {
-            state = state.copy(isDownloading = true, error = null)
+            state = state.copy(isUploading = true, error = null)
             when (val r = repo.downloadFromUrl(state.urlInput)) {
-                is Result.Success -> state = state.copy(
-                    videoFilename = r.data.filename,
-                    isDownloading = false,
-                )
-                is Result.Error -> state = state.copy(isDownloading = false, error = r.message)
+                is Result.Success -> state = state.copy(videoFilename = r.data.filename, isUploading = false)
+                is Result.Error -> state = state.copy(isUploading = false, error = r.message)
             }
         }
     }
 
-    fun updateFontSize(v: Float) { state = state.copy(fontSize = v) }
-    fun updateFontColor(c: String) { state = state.copy(fontColor = c) }
+    fun setFontSize(v: Float) { state = state.copy(fontSize = v) }
+    fun setFontColor(c: String) { state = state.copy(fontColor = c) }
     fun toggleBox(v: Boolean) { state = state.copy(boxEnabled = v) }
-    fun updatePosition(p: String) { state = state.copy(position = p) }
+    fun setPosition(p: String) { state = state.copy(position = p) }
     fun toggleFlip(v: Boolean) { state = state.copy(flipEnabled = v) }
     fun toggleSpeed(v: Boolean) { state = state.copy(speedEnabled = v) }
     fun toggleNoise(v: Boolean) { state = state.copy(noiseEnabled = v) }
     fun toggleBlur(v: Boolean) { state = state.copy(blurEnabled = v) }
 
-    fun startSubtitleProcessing(context: Context) {
-        val filename = state.videoFilename ?: return
+    fun startProcessing(context: Context) {
+        if (state.videoUri == null && state.videoFilename == null) { state = state.copy(error = "Video ရွေးပါ"); return }
         viewModelScope.launch {
             state = state.copy(isProcessing = true, error = null)
-            // TODO: Send subtitle processing request to server
-            // For now, simulate with a delay
+            val cost = getCostForDuration(state.videoDuration, state.pricingTiers)
+            if (cost > 0) {
+                when (val r = repo.deductCoins(cost, "Subtitle ${state.videoDuration}s")) {
+                    is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver)
+                    is Result.Error -> { state = state.copy(isProcessing = false, error = "Coins မလုံလောက်ပါ: ${r.message}"); return@launch }
+                }
+            }
+            // TODO: Extract audio → /api/ai/stt → SRT → FFmpegX burn
             kotlinx.coroutines.delay(2000)
             state = state.copy(isProcessing = false)
-            loadUserInfo()
+            loadCoins()
         }
     }
 

@@ -21,7 +21,7 @@ data class DashboardState(
     val pricingTiers: List<PricingTier> = emptyList(),
     val packages: List<CoinPackage> = emptyList(),
     val paymentMessage: String = "",
-    val contactUsername: String = "admin",
+    val contactUsername: String = "",
     val isLoading: Boolean = false, val error: String? = null,
     val checkinSuccess: Boolean = false,
 )
@@ -33,10 +33,7 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
     var state by mutableStateOf(DashboardState()); private set
 
-    init {
-        loadUserInfo()
-        loadPackages()
-    }
+    init { loadUserInfo() }
 
     fun loadUserInfo() {
         viewModelScope.launch {
@@ -46,24 +43,13 @@ class DashboardViewModel @Inject constructor(
                     isLoading = false, username = r.data.username, email = r.data.email,
                     gold = r.data.gold, silver = r.data.silver,
                     checkedInToday = r.data.checked_in_today, checkinSilver = r.data.checkin_silver,
-                    pricingTiers = r.data.pricing_tiers, packages = r.data.packages,
-                    paymentMessage = r.data.payment_message,
-                    contactUsername = r.data.contact_username.ifBlank { "admin" },
+                    // Handle nullable lists from fixed Models
+                    pricingTiers = r.data.pricing_tiers ?: emptyList(),
+                    packages = r.data.packages ?: emptyList(),
+                    paymentMessage = r.data.payment_message ?: "",
+                    contactUsername = r.data.contact_username ?: "",
                 )
                 is Result.Error -> state = state.copy(isLoading = false, error = r.message)
-            }
-        }
-    }
-
-    private fun loadPackages() {
-        viewModelScope.launch {
-            when (val r = repo.getPackages()) {
-                is Result.Success -> {
-                    if (r.data.isNotEmpty()) {
-                        state = state.copy(packages = r.data)
-                    }
-                }
-                is Result.Error -> {} // packages from user-info are fallback
             }
         }
     }

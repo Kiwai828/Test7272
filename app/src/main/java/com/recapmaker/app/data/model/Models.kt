@@ -1,51 +1,45 @@
 package com.recapmaker.app.data.model
 
-// ── Auth Requests ──
+// ── Auth ──
 data class RegisterRequest(val username: String, val password: String, val email: String? = null)
 data class LoginRequest(val username: String, val password: String)
 data class LinkEmailRequest(val email: String)
 data class ForgotPasswordRequest(val email: String)
 data class ResetPasswordRequest(val email: String, val code: String, val new_password: String)
 data class ChangePasswordRequest(val old_password: String, val new_password: String)
-
-// ── Coin Requests ──
 data class DeductCoinsRequest(val amount: Int, val reason: String, val coin_type: String = "auto")
 data class RefundCoinsRequest(val amount: Int, val reason: String, val coin_type: String = "gold")
-
-// ── AI Requests ──
 data class TtsRequest(val text: String, val voice: String = "Puck")
 data class AnalyzeRequest(val text: String, val system_instruction: String = "")
-
-// ── URL Download ──
 data class UrlDownloadRequest(val url: String)
 
-// ── Auth Responses ──
 data class AuthResponse(
     val status: String = "", val token: String? = null, val user_id: String? = null,
     val username: String? = null, val gold: Int = 0, val silver: Int = 0,
     val email_missing: Boolean = false, val detail: String? = null,
 )
+
+// All List/object fields nullable so a single bad field won't nuke the whole response
 data class UserInfoResponse(
     val status: String = "", val username: String = "", val email: String? = null,
     val gold: Int = 0, val silver: Int = 0, val checked_in_today: Boolean = false,
-    val checkin_silver: Int = 15, val pricing_tiers: List<PricingTier> = emptyList(),
-    val packages: List<CoinPackage> = emptyList(), val payment_message: String = "",
-    val contact_username: String = "",
-)
-data class ConfigResponse(
-    val status: String = "", val maintenance_mode: Boolean = false,
-    val pricing_tiers: List<PricingTier> = emptyList(),
-    val packages: List<CoinPackage> = emptyList(), val payment_message: String = "",
+    val checkin_silver: Int = 15, val pricing_tiers: List<PricingTier>? = null,
+    val packages: List<CoinPackage>? = null, val payment_message: String? = null,
+    val contact_username: String? = null,
 )
 
-// ── Coin Responses ──
+data class ConfigResponse(
+    val status: String = "", val maintenance_mode: Boolean = false,
+    val pricing_tiers: List<PricingTier>? = null,
+    val packages: List<CoinPackage>? = null, val payment_message: String? = null,
+)
+
 data class CoinResponse(
     val status: String = "", val gold: Int = 0, val silver: Int = 0,
     val cost: Int = 0, val coin_type: String = "", val coins_earned: Int = 0,
     val detail: String? = null,
 )
 
-// ── AI Responses ──
 data class TtsResponse(
     val status: String = "", val audio_data: String? = null,
     val mime_type: String = "audio/mp3", val detail: String? = null,
@@ -55,54 +49,45 @@ data class SttResponse(val status: String = "", val result: SttResult? = null, v
 data class SttResult(val text: String = "", val segments: List<SttSegment> = emptyList())
 data class SttSegment(val start: Double = 0.0, val end: Double = 0.0, val text: String = "")
 data class MessageResponse(val status: String = "", val message: String? = null, val detail: String? = null)
-
-// ── URL Download Response ──
 data class UrlDownloadResponse(
     val status: String = "", val filename: String? = null,
     val path: String? = null, val message: String? = null,
 )
 
-// ── Pricing & Packages ──
 data class PricingTier(val max_seconds: Int = 0, val cost: Int = 0)
+
+// ═══ BUG FIX #1 ═══
+// MongoDB stores price as "5500Ks" (String). Old code had `val price: Int = 0`
+// which made Gson fail → whole UserInfoResponse parse fails → coins show 0.
+// Fix: ALL fields nullable String/Int? with safe accessor properties.
 data class CoinPackage(
-    val name: String = "", val price: Int = 0, val gold: Int = 0,
-    val silver: Int = 0, val coins: Int = 0, val description: String = "",
-    val no_ads_days: Int = 0,
-)
+    val name: String? = null,
+    val price: String? = null,      // "5500Ks" — String, NOT Int!
+    val gold: Int? = null,
+    val silver: Int? = null,
+    val coins: Int? = null,         // some API versions use "coins" instead of "gold"
+    val description: String? = null,
+    val no_ads_days: Int? = null,
+) {
+    val displayName: String get() = name ?: "Package"
+    val displayPrice: String get() = price ?: "—"
+    val goldAmount: Int get() = gold ?: coins ?: 0
+    val silverAmount: Int get() = silver ?: 0
+}
 
-// ── Video Process Request (local) ──
-data class VideoProcessOptions(
-    val bypassFlip: Boolean = false,
-    val bypassSpeed: Boolean = false,
-    val bypassPitch: Boolean = false,
-    val bypassNoise: Boolean = false,
-    val blurAreas: List<BlurArea> = emptyList(),
-    val logoUri: String? = null,
-    val logoX: Int = 0, val logoY: Int = 0, val logoW: Int = 100, val logoH: Int = 100,
-    val textWatermarkText: String = "",
-    val textWatermarkPosition: String = "bottom_center",
-    val textWatermarkSize: Int = 24,
-    val textWatermarkColor: String = "#FFFFFF",
-    val textWatermarkScroll: Boolean = false,
-    val textWatermarkBox: Boolean = false,
-    val textWatermarkBoxColor: String = "#000000",
-    val textWatermarkBoxOpacity: Float = 0.5f,
-    val aiText: String = "",
-    val voiceName: String = "ThihaNeural",
-)
-
+// ── Video Processing ──
 data class BlurArea(val x: Int = 0, val y: Int = 0, val w: Int = 0, val h: Int = 0)
 
-// ── Voice Data ──
+// ── Voice Data (32 voices matching website) ──
+enum class VoiceGender { Male, Female, Neutral }
+enum class VoiceProvider { Google, Microsoft }
+
 data class VoiceInfo(
     val name: String,
     val gender: VoiceGender,
     val label: String = name,
     val provider: VoiceProvider,
 )
-
-enum class VoiceGender { Male, Female, Neutral }
-enum class VoiceProvider { Google, Microsoft }
 
 object VoiceData {
     val googleVoices = listOf(
@@ -144,8 +129,6 @@ object VoiceData {
     )
 
     val allVoices = googleVoices + microsoftVoices
-
     val geminiVoiceNames = googleVoices.map { it.name }.toSet()
-
     fun isGeminiVoice(name: String) = name in geminiVoiceNames
 }

@@ -3,7 +3,6 @@ package com.recapmaker.app.ui.common
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -14,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -23,12 +21,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.recapmaker.app.data.model.VoiceGender
-
-// ── Text Fields ──
 
 @Composable
 fun AppTextField(
@@ -36,12 +31,10 @@ fun AppTextField(
     modifier: Modifier = Modifier, imeAction: ImeAction = ImeAction.Next,
     onImeAction: () -> Unit = {},
     keyboardOptions: KeyboardOptions = KeyboardOptions(imeAction = imeAction),
-    singleLine: Boolean = true, maxLines: Int = 1, minLines: Int = 1,
 ) {
     OutlinedTextField(
         value = value, onValueChange = onValueChange, label = { Text(label) },
-        singleLine = singleLine, maxLines = maxLines, minLines = minLines,
-        modifier = modifier.fillMaxWidth(),
+        singleLine = true, modifier = modifier.fillMaxWidth(),
         keyboardOptions = keyboardOptions,
         keyboardActions = KeyboardActions { onImeAction() },
         colors = OutlinedTextFieldDefaults.colors(
@@ -78,25 +71,17 @@ fun PasswordField(
     )
 }
 
-// ── Buttons ──
-
 @Composable
-fun PrimaryButton(
-    text: String, onClick: () -> Unit, loading: Boolean = false,
-    modifier: Modifier = Modifier, color: Color = Purple, enabled: Boolean = true,
-) {
+fun PrimaryButton(text: String, onClick: () -> Unit, loading: Boolean = false, modifier: Modifier = Modifier, color: Color = Purple, enabled: Boolean = true) {
     Button(
         onClick = onClick, modifier = modifier.fillMaxWidth().height(50.dp),
-        enabled = !loading && enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = color.copy(0.4f)),
+        enabled = !loading && enabled, colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = color.copy(0.4f)),
         shape = RoundedCornerShape(12.dp),
     ) {
         if (loading) CircularProgressIndicator(Modifier.size(22.dp), Color.White, strokeWidth = 2.dp)
         else Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }
-
-// ── Banners ──
 
 @Composable
 fun ErrorBanner(message: String?) {
@@ -109,58 +94,31 @@ fun ErrorBanner(message: String?) {
 }
 
 @Composable
-fun SuccessBanner(message: String) {
-    Surface(color = Emerald.copy(0.15f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Text(message, color = Emerald, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center)
-    }
-}
-
-// ── Coin Badge ──
-
-@Composable
-fun CoinBadge(gold: Int, silver: Int, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    Row(
-        modifier = modifier.then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        CoinPill("🥇", gold, Gold)
-        CoinPill("🥈", silver, SilverColor)
-    }
-}
-
-@Composable
-private fun CoinPill(emoji: String, amount: Int, color: Color) {
-    Surface(
-        color = color.copy(0.1f), shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, color.copy(0.25f)),
-    ) {
-        Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(emoji, fontSize = 13.sp)
-            Spacer(Modifier.width(4.dp))
-            Text("$amount", color = color, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+fun CoinBadge(gold: Int, silver: Int, modifier: Modifier = Modifier) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(color = Gold.copy(0.1f), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Gold.copy(0.25f))) {
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("🥇", fontSize = 12.sp); Spacer(Modifier.width(3.dp))
+                Text("$gold", color = Gold, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        }
+        Surface(color = SilverColor.copy(0.1f), shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, SilverColor.copy(0.25f))) {
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("🥈", fontSize = 12.sp); Spacer(Modifier.width(3.dp))
+                Text("$silver", color = SilverColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
         }
     }
 }
 
 // ── Section Card ──
-
 @Composable
-fun SectionCard(
-    title: String, icon: ImageVector? = null, iconColor: Color = Purple,
-    modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = CardBg, shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, CardBorder),
-    ) {
+fun SectionCard(title: String, icon: ImageVector? = null, iconColor: Color = Purple, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Surface(modifier = modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder)) {
         Column(Modifier.padding(16.dp)) {
             if (title.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (icon != null) {
-                        Icon(icon, null, tint = iconColor, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                    }
+                    if (icon != null) { Icon(icon, null, tint = iconColor, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
                     Text(title, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontSize = 14.sp)
                 }
                 Spacer(Modifier.height(12.dp))
@@ -170,118 +128,70 @@ fun SectionCard(
     }
 }
 
-// ── Toggle Row (Effect Switch) ──
-
+// ── Effect Toggle Row ──
 @Composable
-fun EffectToggle(
-    label: String, icon: ImageVector, checked: Boolean, onToggle: (Boolean) -> Unit,
-    iconColor: Color = TextDim, switchColor: Color = Purple,
-) {
+fun EffectToggle(label: String, icon: ImageVector, checked: Boolean, onToggle: (Boolean) -> Unit, switchColor: Color = Purple) {
     Surface(
         color = if (checked) switchColor.copy(0.06f) else Color.Transparent,
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, if (checked) switchColor.copy(0.2f) else Purple.copy(0.07f)),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, null, tint = if (checked) switchColor else iconColor, modifier = Modifier.size(18.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = if (checked) switchColor else TextDim, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Text(label, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            Switch(
-                checked = checked, onCheckedChange = onToggle,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = switchColor,
-                    checkedThumbColor = Color.White,
-                    uncheckedTrackColor = SurfaceDark,
-                    uncheckedBorderColor = CardBorder,
-                ),
-            )
+            Switch(checked = checked, onCheckedChange = onToggle, colors = SwitchDefaults.colors(
+                checkedTrackColor = switchColor, checkedThumbColor = Color.White, uncheckedTrackColor = SurfaceDark, uncheckedBorderColor = CardBorder,
+            ))
         }
     }
 }
 
-// ── Voice Card ──
-
+// ── Voice Card (2-column grid item) ──
 @Composable
-fun VoiceCard(
-    name: String, label: String, gender: VoiceGender,
-    isSelected: Boolean, onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val genderColor = when (gender) {
-        VoiceGender.Male -> Cyan
-        VoiceGender.Female -> Rose
-        VoiceGender.Neutral -> Purple
-    }
+fun VoiceCard(name: String, label: String, gender: VoiceGender, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val genderColor = when (gender) { VoiceGender.Male -> Cyan; VoiceGender.Female -> Rose; VoiceGender.Neutral -> Purple }
     Surface(
         modifier = modifier.clickable { onClick() },
         color = if (isSelected) Purple.copy(0.08f) else CardBg.copy(0.65f),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, if (isSelected) Purple.copy(0.4f) else Purple.copy(0.07f)),
     ) {
-        Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Avatar
-            Box(
-                Modifier.size(30.dp).clip(RoundedCornerShape(9.dp))
-                    .background(genderColor.copy(0.1f))
-                    .border(1.dp, genderColor.copy(0.18f), RoundedCornerShape(9.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label.take(2).uppercase(),
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold, color = genderColor,
-                )
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(genderColor.copy(0.1f)).border(1.dp, genderColor.copy(0.18f), RoundedCornerShape(9.dp)),
+                contentAlignment = Alignment.Center) {
+                Text(label.take(2).uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = genderColor)
             }
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Text(label, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    gender.name, fontSize = 10.sp,
-                    color = genderColor.copy(0.8f),
-                )
+                Text(label, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(gender.name, fontSize = 10.sp, color = genderColor.copy(0.8f))
             }
-            if (isSelected) {
-                Icon(Icons.Default.CheckCircle, null, tint = Purple, modifier = Modifier.size(18.dp))
-            }
+            if (isSelected) Icon(Icons.Default.CheckCircle, null, tint = Purple, modifier = Modifier.size(16.dp))
         }
     }
 }
 
-// ── Tab Selector ──
-
+// ── Tab Row ──
 @Composable
-fun TabRow(
-    tabs: List<Pair<String, String>>, // (id, label)
-    selectedTab: String, onTabSelected: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+fun VoiceTabRow(tabs: List<Pair<String, String>>, selectedTab: String, onTabSelected: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         tabs.forEach { (id, label) ->
-            val selected = selectedTab == id
+            val sel = selectedTab == id
             Surface(
                 modifier = Modifier.weight(1f).clickable { onTabSelected(id) },
-                color = if (selected) Purple.copy(0.12f) else SurfaceDark.copy(0.65f),
+                color = if (sel) Purple.copy(0.12f) else SurfaceDark.copy(0.65f),
                 shape = RoundedCornerShape(11.dp),
-                border = BorderStroke(1.dp, if (selected) Purple.copy(0.35f) else Purple.copy(0.12f)),
+                border = BorderStroke(1.dp, if (sel) Purple.copy(0.35f) else Purple.copy(0.12f)),
             ) {
-                Text(
-                    label, modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(),
-                    textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                    color = if (selected) Color.White else TextMid,
-                )
+                Text(label, modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(), textAlign = TextAlign.Center,
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (sel) Color.White else TextMid)
             }
         }
     }
 }
 
-// ── Position Selector Grid ──
-
+// ── Position Selector ──
 @Composable
 fun PositionSelector(selected: String, onSelect: (String) -> Unit) {
     val positions = listOf(
@@ -290,57 +200,26 @@ fun PositionSelector(selected: String, onSelect: (String) -> Unit) {
         "center" to "◎ အလယ်တည့်",
     )
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // top row
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            positions.take(3).forEach { (value, label) ->
-                PositionChip(label, selected == value, Modifier.weight(1f)) { onSelect(value) }
-            }
-        }
-        // center
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            PositionChip(positions[6].second, selected == "center", Modifier.fillMaxWidth(0.4f)) { onSelect("center") }
-        }
-        // bottom row
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            positions.subList(3, 6).forEach { (value, label) ->
-                PositionChip(label, selected == value, Modifier.weight(1f)) { onSelect(value) }
-            }
-        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { positions.take(3).forEach { (v, l) -> PosChip(l, selected == v, Modifier.weight(1f)) { onSelect(v) } } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { PosChip(positions[6].second, selected == "center", Modifier.fillMaxWidth(0.4f)) { onSelect("center") } }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { positions.subList(3, 6).forEach { (v, l) -> PosChip(l, selected == v, Modifier.weight(1f)) { onSelect(v) } } }
     }
 }
 
 @Composable
-private fun PositionChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(
-        modifier = modifier.clickable { onClick() },
-        color = if (selected) Purple.copy(0.15f) else Color.Transparent,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, if (selected) Purple.copy(0.4f) else CardBorder),
-    ) {
-        Text(
-            label, modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp).fillMaxWidth(),
-            textAlign = TextAlign.Center, fontSize = 11.sp, color = if (selected) Purple else TextDim,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        )
+private fun PosChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(modifier = modifier.clickable { onClick() }, color = if (selected) Purple.copy(0.15f) else Color.Transparent,
+        shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, if (selected) Purple.copy(0.4f) else CardBorder)) {
+        Text(label, modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp).fillMaxWidth(), textAlign = TextAlign.Center,
+            fontSize = 11.sp, color = if (selected) Purple else TextDim, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
     }
-}
-
-// ── Divider ──
-
-@Composable
-fun SectionDivider(modifier: Modifier = Modifier) {
-    HorizontalDivider(modifier.padding(vertical = 12.dp), color = CardBorder)
 }
 
 // ── Loading Overlay ──
-
 @Composable
 fun LoadingOverlay(visible: Boolean, message: String = "Processing...") {
     AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
-        Box(
-            Modifier.fillMaxSize().background(DarkBg.copy(0.85f)).clickable(enabled = false) {},
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(Modifier.fillMaxSize().background(DarkBg.copy(0.85f)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(color = Purple, strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
                 Spacer(Modifier.height(16.dp))
