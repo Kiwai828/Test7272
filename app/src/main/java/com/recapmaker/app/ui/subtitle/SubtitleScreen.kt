@@ -104,7 +104,7 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                         EffectToggle("Video ကိုလှန်မည်", Icons.Default.SwapHoriz, s.flipEnabled) { vm.toggleFlip(it) }
                         EffectToggle("Speed မြန်မည်", Icons.Default.Speed, s.speedEnabled) { vm.toggleSpeed(it) }
                         EffectToggle("Noise/Grain", Icons.Default.Grain, s.noiseEnabled) { vm.toggleNoise(it) }
-                        EffectToggle("Blur", Icons.Default.BlurOn, s.blurEnabled, { vm.toggleBlur(it) }, switchColor = Rose)
+                        EffectToggle("Blur", Icons.Default.BlurOn, s.blurEnabled, switchColor = Rose) { vm.toggleBlur(it) }
                     }
                 }
 

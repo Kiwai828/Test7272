@@ -130,7 +130,7 @@ fun SectionCard(title: String, icon: ImageVector? = null, iconColor: Color = Pur
 
 // ── Effect Toggle Row ──
 @Composable
-fun EffectToggle(label: String, icon: ImageVector, checked: Boolean, onToggle: (Boolean) -> Unit, switchColor: Color = Purple) {
+fun EffectToggle(label: String, icon: ImageVector, checked: Boolean, switchColor: Color = Purple, onToggle: (Boolean) -> Unit) {
     Surface(
         color = if (checked) switchColor.copy(0.06f) else Color.Transparent,
         shape = RoundedCornerShape(14.dp),

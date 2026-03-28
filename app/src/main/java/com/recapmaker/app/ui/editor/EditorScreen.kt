@@ -104,7 +104,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         EffectToggle("Speed မြန်မည် (1.05x)", Icons.Default.Speed, s.speedEnabled) { vm.toggleSpeed(it) }
                         EffectToggle("အသံပြောင်းမည် (Copyright)", Icons.Default.MusicNote, s.pitchEnabled) { vm.togglePitch(it) }
                         EffectToggle("Noise/Grain ထည့်မည်", Icons.Default.Grain, s.noiseEnabled) { vm.toggleNoise(it) }
-                        EffectToggle("နေရာဝှက် (Blur)", Icons.Default.BlurOn, s.blurEnabled, { vm.toggleBlur(it) }, switchColor = Rose)
+                        EffectToggle("နေရာဝှက် (Blur)", Icons.Default.BlurOn, s.blurEnabled, switchColor = Rose) { vm.toggleBlur(it) }
                     }
                     AnimatedVisibility(s.blurEnabled) {
                         Column(Modifier.padding(top = 8.dp)) {
