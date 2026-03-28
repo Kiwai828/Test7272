@@ -11,7 +11,6 @@ data class DeductCoinsRequest(val amount: Int, val reason: String, val coin_type
 data class RefundCoinsRequest(val amount: Int, val reason: String, val coin_type: String = "gold")
 data class TtsRequest(val text: String, val voice: String = "Puck")
 data class AnalyzeRequest(val text: String, val system_instruction: String = "")
-data class UrlDownloadRequest(val url: String)
 
 data class AuthResponse(
     val status: String = "", val token: String? = null, val user_id: String? = null,
@@ -49,10 +48,6 @@ data class SttResponse(val status: String = "", val result: SttResult? = null, v
 data class SttResult(val text: String = "", val segments: List<SttSegment> = emptyList())
 data class SttSegment(val start: Double = 0.0, val end: Double = 0.0, val text: String = "")
 data class MessageResponse(val status: String = "", val message: String? = null, val detail: String? = null)
-data class UrlDownloadResponse(
-    val status: String = "", val filename: String? = null,
-    val path: String? = null, val message: String? = null,
-)
 
 data class PricingTier(val max_seconds: Int = 0, val cost: Int = 0)
 
@@ -132,3 +127,4 @@ object VoiceData {
     val geminiVoiceNames = googleVoices.map { it.name }.toSet()
     fun isGeminiVoice(name: String) = name in geminiVoiceNames
 }
+

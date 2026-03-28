@@ -56,14 +56,6 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "STT failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
-    // ── URL Download ──
-    suspend fun downloadFromUrl(url: String): Result<UrlDownloadResponse> = try {
-        val r = api.downloadFromUrl(UrlDownloadRequest(url))
-        if (r.isSuccessful && r.body()?.status == "success") Result.Success(r.body()!!)
-        else Result.Error(r.body()?.message ?: extractDetail(r.errorBody()?.string() ?: "Download failed"))
-    } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
-
-    // ── Packages ──
     suspend fun getPackages(): Result<List<CoinPackage>> = try {
         val r = api.getPackages()
         if (r.isSuccessful) Result.Success(r.body() ?: emptyList()) else Result.Error("Failed")

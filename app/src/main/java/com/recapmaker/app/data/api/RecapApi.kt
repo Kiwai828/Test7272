@@ -7,17 +7,24 @@ import retrofit2.Response
 import retrofit2.http.*
 
 interface RecapApi {
+    // Auth
     @POST("api/register") suspend fun register(@Body req: RegisterRequest): Response<AuthResponse>
     @POST("api/login") suspend fun login(@Body req: LoginRequest): Response<AuthResponse>
     @POST("api/link-email") suspend fun linkEmail(@Body req: LinkEmailRequest): Response<MessageResponse>
     @POST("api/forgot-password") suspend fun forgotPassword(@Body req: ForgotPasswordRequest): Response<MessageResponse>
     @POST("api/reset-password") suspend fun resetPassword(@Body req: ResetPasswordRequest): Response<MessageResponse>
     @POST("api/change-password") suspend fun changePassword(@Body req: ChangePasswordRequest): Response<MessageResponse>
+
+    // User & Config
     @GET("api/user-info") suspend fun getUserInfo(): Response<UserInfoResponse>
     @GET("api/config") suspend fun getConfig(): Response<ConfigResponse>
+
+    // Coins
     @POST("api/daily-checkin") suspend fun dailyCheckin(): Response<CoinResponse>
     @POST("api/deduct-coins") suspend fun deductCoins(@Body req: DeductCoinsRequest): Response<CoinResponse>
     @POST("api/refund-coins") suspend fun refundCoins(@Body req: RefundCoinsRequest): Response<CoinResponse>
+
+    // AI (server-proxied to Gemini/Groq)
     @POST("api/ai/tts") suspend fun geminiTts(@Body req: TtsRequest): Response<TtsResponse>
     @POST("api/ai/analyze") suspend fun analyzeText(@Body req: AnalyzeRequest): Response<AnalyzeResponse>
     @Multipart @POST("api/ai/stt") suspend fun groqStt(
@@ -25,9 +32,6 @@ interface RecapApi {
         @Part("language") language: RequestBody,
         @Part("model") model: RequestBody,
     ): Response<SttResponse>
-
-    // URL download (YouTube/TikTok/FB → server-side yt-dlp)
-    @POST("download-from-url") suspend fun downloadFromUrl(@Body req: UrlDownloadRequest): Response<UrlDownloadResponse>
 
     // Packages
     @GET("api/get_packages") suspend fun getPackages(): Response<List<CoinPackage>>

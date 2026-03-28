@@ -15,8 +15,8 @@ android {
         applicationId = "com.recapmaker.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "2.0.0"
+        versionCode = 2
+        versionName = "2.2.0"
         buildConfigField("String", "API_BASE_URL", "\"https://zzzzz-mu.vercel.app\"")
     }
 
@@ -89,6 +89,9 @@ dependencies {
     // Media
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
+
+    // FFmpeg-Kit — on-device video processing (full-gpl for all codecs + filters)
+    implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
