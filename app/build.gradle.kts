@@ -90,8 +90,10 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
 
-    // FFmpeg-Kit — on-device video processing (LGPL, available on mavenCentral)
-    implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
+    // FFmpeg-Kit — on-device video processing (community fork, Maven Central)
+    // Same API as com.arthenica:ffmpeg-kit, compatible with API 35 + 16KB pages
+    implementation("com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1")
+    implementation("com.arthenica:smart-exception-java:0.2.1")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
