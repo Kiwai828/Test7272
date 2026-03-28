@@ -6,15 +6,24 @@ import androidx.compose.ui.graphics.Color
 
 val Purple = Color(0xFF7C6AFF)
 val PurpleDark = Color(0xFF6C5CE7)
+val PurpleGlow = Color(0xFF7C6AFF).copy(alpha = 0.15f)
 val Emerald = Color(0xFF00E897)
+val EmeraldGlow = Color(0xFF00E897).copy(alpha = 0.12f)
 val Gold = Color(0xFFFFBE2E)
+val GoldDim = Color(0xFFFFD700)
 val DarkBg = Color(0xFF05070E)
 val CardBg = Color(0xFF12182A)
+val CardBgHover = Color(0xFF161E34)
 val CardBorder = Color(0xFF1E293B)
 val TextPrimary = Color(0xFFE8ECF4)
 val TextDim = Color(0xFF5A6280)
+val TextMid = Color(0xFF8A90AD)
 val ErrorRed = Color(0xFFEF4444)
 val SilverColor = Color(0xFFC0C0C0)
+val Rose = Color(0xFFFF4F7B)
+val Cyan = Color(0xFF00E5FF)
+val WarningYellow = Color(0xFFFFC107)
+val SurfaceDark = Color(0xFF0A0E1A)
 
 private val DarkScheme = darkColorScheme(
     primary = Purple, onPrimary = Color.White,

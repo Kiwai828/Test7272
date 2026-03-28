@@ -13,8 +13,10 @@ import com.recapmaker.app.ui.auth.*
 import com.recapmaker.app.ui.common.RecapTheme
 import com.recapmaker.app.ui.dashboard.*
 import com.recapmaker.app.ui.editor.EditorScreen
+import com.recapmaker.app.ui.editor.EditorViewModel
 import com.recapmaker.app.ui.settings.SettingsScreen
 import com.recapmaker.app.ui.subtitle.SubtitleScreen
+import com.recapmaker.app.ui.subtitle.SubtitleViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -70,11 +72,13 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("editor") {
-                        EditorScreen(onBack = { nav.popBackStack() })
+                        val vm: EditorViewModel = hiltViewModel()
+                        EditorScreen(onBack = { nav.popBackStack() }, vm = vm)
                     }
 
                     composable("subtitle") {
-                        SubtitleScreen(onBack = { nav.popBackStack() })
+                        val vm: SubtitleViewModel = hiltViewModel()
+                        SubtitleScreen(onBack = { nav.popBackStack() }, vm = vm)
                     }
 
                     composable("settings") {

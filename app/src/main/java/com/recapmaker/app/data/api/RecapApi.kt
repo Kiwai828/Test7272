@@ -25,4 +25,45 @@ interface RecapApi {
         @Part("language") language: RequestBody,
         @Part("model") model: RequestBody,
     ): Response<SttResponse>
+
+    // Video upload
+    @Multipart @POST("upload-video") suspend fun uploadVideo(
+        @Part video: MultipartBody.Part,
+    ): Response<UrlDownloadResponse>
+
+    // URL download (YouTube, TikTok, Facebook)
+    @POST("download-from-url") suspend fun downloadFromUrl(
+        @Body req: UrlDownloadRequest,
+    ): Response<UrlDownloadResponse>
+
+    // Process video (server-side)
+    @Multipart @POST("process-video") suspend fun processVideo(
+        @Part("video_filename") videoFilename: RequestBody,
+        @Part("bypass_flip") bypassFlip: RequestBody,
+        @Part("bypass_speed") bypassSpeed: RequestBody,
+        @Part("bypass_pitch") bypassPitch: RequestBody,
+        @Part("bypass_noise") bypassNoise: RequestBody,
+        @Part("blur_areas") blurAreas: RequestBody,
+        @Part("logo_x") logoX: RequestBody,
+        @Part("logo_y") logoY: RequestBody,
+        @Part("logo_w") logoW: RequestBody,
+        @Part("logo_h") logoH: RequestBody,
+        @Part logo: MultipartBody.Part?,
+        @Part("text_watermark_text") textWatermarkText: RequestBody,
+        @Part("text_watermark_position") textWatermarkPosition: RequestBody,
+        @Part("text_watermark_size") textWatermarkSize: RequestBody,
+        @Part("text_watermark_color") textWatermarkColor: RequestBody,
+        @Part("text_watermark_scroll") textWatermarkScroll: RequestBody,
+        @Part("text_watermark_box") textWatermarkBox: RequestBody,
+        @Part("text_watermark_box_color") textWatermarkBoxColor: RequestBody,
+        @Part("text_watermark_box_opacity") textWatermarkBoxOpacity: RequestBody,
+        @Part("ai_text") aiText: RequestBody,
+        @Part("voice_name") voiceName: RequestBody,
+    ): Response<MessageResponse>
+
+    // Get packages
+    @GET("api/get_packages") suspend fun getPackages(): Response<List<CoinPackage>>
+
+    // Voice preview
+    @GET("voice-preview") suspend fun voicePreview(@Query("voice") voice: String): Response<okhttp3.ResponseBody>
 }
