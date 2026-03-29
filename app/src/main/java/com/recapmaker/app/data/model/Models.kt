@@ -10,7 +10,11 @@ data class ChangePasswordRequest(val old_password: String, val new_password: Str
 data class DeductCoinsRequest(val amount: Int, val reason: String, val coin_type: String = "auto")
 data class RefundCoinsRequest(val amount: Int, val reason: String, val coin_type: String = "gold")
 data class TtsRequest(val text: String, val voice: String = "Puck")
-data class AnalyzeRequest(val text: String, val system_instruction: String = "")
+data class AnalyzeRequest(
+    val text: String = "",
+    val system_instruction: String = "",
+    val audio_data: String? = null,  // Base64-encoded MP3 for Gemini multimodal transcribe
+)
 
 data class AuthResponse(
     val status: String = "", val token: String? = null, val user_id: String? = null,

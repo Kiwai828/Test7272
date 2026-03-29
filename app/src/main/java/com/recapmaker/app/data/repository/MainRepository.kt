@@ -43,8 +43,8 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "TTS failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
-    suspend fun analyzeText(text: String, instruction: String = ""): Result<AnalyzeResponse> = try {
-        val r = api.analyzeText(AnalyzeRequest(text, instruction))
+    suspend fun analyzeText(text: String = "", instruction: String = "", audioBase64: String? = null): Result<AnalyzeResponse> = try {
+        val r = api.analyzeText(AnalyzeRequest(text = text, system_instruction = instruction, audio_data = audioBase64))
         if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 

@@ -183,10 +183,13 @@ class EditorViewModel @Inject constructor(
 
     /**
      * Full AI Analyze flow:
-     * 1. Extract audio from video (FFmpeg on-device)
-     * 2. Send audio to /api/ai/stt (Groq Whisper) → English text
-     * 3. Send English text to /api/ai/analyze (Gemini) → Myanmar script
-     * 4. Auto-fill script box
+     * 1. Extract audio from video (FFmpeg on-device → MP3)
+     * 2. Base64 encode the audio
+     * 3. Send to /api/ai/analyze with audio_data field → Gemini multimodal
+     *    (Gemini transcribes audio + translates to Myanmar in ONE call)
+     * 4. Auto-fill script box with Myanmar text
+     *
+     * NO Groq/Whisper needed — Gemini handles both transcription and translation.
      */
     fun analyzeScript(context: Context) {
         val videoPath = state.videoLocalPath
@@ -194,48 +197,45 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             state = state.copy(isAnalyzing = true, error = null)
             try {
-                // Step 1: Extract audio from video
+                // Step 1: Extract audio from video (on-device FFmpeg)
                 state = state.copy(processStatus = "Audio extract လုပ်နေသည်...")
                 val audioPath = FFmpegProcessor.extractAudio(videoPath, context)
                 if (audioPath == null) {
-                    state = state.copy(isAnalyzing = false, error = "Audio extract မရပါ")
+                    state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရပါ")
                     return@launch
                 }
 
-                // Step 2: Send to Groq STT → English text
-                state = state.copy(processStatus = "Speech-to-Text ပြောင်းနေသည်...")
+                // Step 2: Base64 encode the audio file
+                state = state.copy(processStatus = "Audio ပြင်ဆင်နေသည်...")
                 val audioFile = File(audioPath)
-                val sttResult = repo.groqStt(audioFile, "en")
+                val audioBytes = audioFile.readBytes()
+                val audioBase64 = android.util.Base64.encodeToString(audioBytes, android.util.Base64.NO_WRAP)
                 audioFile.delete()
 
-                val englishText = when (sttResult) {
-                    is Result.Success -> sttResult.data.result?.text ?: ""
-                    is Result.Error -> {
-                        state = state.copy(isAnalyzing = false, processStatus = "", error = "STT failed: ${sttResult.message}")
-                        return@launch
-                    }
-                }
-
-                if (englishText.isBlank()) {
-                    state = state.copy(isAnalyzing = false, processStatus = "", error = "Video ထဲတွင် စကားပြောသံ မတွေ့ပါ")
-                    return@launch
-                }
-
-                // Step 3: Translate English → Myanmar via Gemini
-                state = state.copy(processStatus = "Myanmar ဘာသာပြန်နေသည်...")
+                // Step 3: Send to Gemini multimodal (transcribe + translate in one call)
+                state = state.copy(processStatus = "AI Transcribe + Translate လုပ်နေသည်...")
                 val instruction = buildString {
-                    append("Target Audience: Myanmar (Burmese) viewers.\n")
-                    append("Translate the input English text directly into natural spoken Burmese (မြန်မာစကားပြော).\n")
-                    append("DO NOT summarize. Translate line-by-line.\n")
-                    append("Transliterate proper nouns phonetically (e.g. 'Harry' → 'ဟယ်ရီ').\n")
-                    append("Output ONLY the Burmese spoken translation text, no markdown, no title.")
+                    append("Listen to this audio carefully and perform TWO tasks:\n\n")
+                    append("TASK 1: Transcribe all spoken words in the audio to English text.\n")
+                    append("TASK 2: Translate the English transcription into natural spoken Burmese (မြန်မာစကားပြော).\n\n")
+                    append("RULES:\n")
+                    append("- Transliterate proper nouns phonetically (e.g. 'Harry' → 'ဟယ်ရီ', 'Xiao Yan' → 'ရှောင်ယန်း')\n")
+                    append("- DO NOT summarize. Translate line-by-line.\n")
+                    append("- Output ONLY the final Burmese translation text.\n")
+                    append("- No markdown, no title, no English text in output.\n")
+                    append("- If no speech is detected, output: 'စကားပြောသံ မတွေ့ပါ'")
                 }
-                when (val r = repo.analyzeText(englishText, instruction)) {
+
+                when (val r = repo.analyzeText(text = "", instruction = instruction, audioBase64 = audioBase64)) {
                     is Result.Success -> {
-                        val myanmarText = r.data.text ?: englishText
-                        state = state.copy(aiText = myanmarText, isAnalyzing = false, processStatus = "")
+                        val myanmarText = r.data.text ?: ""
+                        if (myanmarText.isBlank() || myanmarText.contains("မတွေ့ပါ")) {
+                            state = state.copy(isAnalyzing = false, processStatus = "", error = "Video ထဲတွင် စကားပြောသံ မတွေ့ပါ")
+                        } else {
+                            state = state.copy(aiText = myanmarText, isAnalyzing = false, processStatus = "")
+                        }
                     }
-                    is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "Translate failed: ${r.message}")
+                    is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI Analyze failed: ${r.message}")
                 }
             } catch (e: Exception) {
                 state = state.copy(isAnalyzing = false, processStatus = "", error = "Analyze failed: ${e.message}")
@@ -245,13 +245,12 @@ class EditorViewModel @Inject constructor(
 
     /**
      * Translate existing script text (manual input) from English to Myanmar.
-     * Used when user types/pastes English text and wants translation only.
      */
     fun translateScript() {
         if (state.aiText.isBlank()) return
         viewModelScope.launch {
             state = state.copy(isAnalyzing = true)
-            when (val r = repo.analyzeText(state.aiText, "Translate to natural spoken Burmese. Transliterate proper nouns phonetically. Output ONLY Burmese text.")) {
+            when (val r = repo.analyzeText(text = state.aiText, instruction = "Translate to natural spoken Burmese. Transliterate proper nouns phonetically. Output ONLY Burmese text.")) {
                 is Result.Success -> state = state.copy(aiText = r.data.text ?: state.aiText, isAnalyzing = false)
                 is Result.Error -> state = state.copy(isAnalyzing = false, error = r.message)
             }
