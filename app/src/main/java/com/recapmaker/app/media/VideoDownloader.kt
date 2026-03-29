@@ -9,18 +9,30 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
-/**
- * Downloads a direct video URL (mp4, m3u8, etc.) to local cache.
- * Supports progress callback.
- */
 object VideoDownloader {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.MINUTES)
-        .followRedirects(true)
-        .followSslRedirects(true)
+        .readTimeout(10, TimeUnit.MINUTES)
+        .followRedirects(true).followSslRedirects(true)
         .build()
+
+    /** Video info from HEAD request */
+    data class VideoInfo(
+        val url: String,
+        val fileSize: Long = -1,        // bytes, -1 = unknown
+        val contentType: String = "",   // e.g. video/mp4
+        val valid: Boolean = false,
+        val error: String? = null,
+    ) {
+        val fileSizeText: String get() = when {
+            fileSize < 0 -> "Unknown"
+            fileSize < 1024 * 1024 -> "${"%.1f".format(fileSize / 1024.0)} KB"
+            else -> "${"%.1f".format(fileSize / (1024.0 * 1024.0))} MB"
+        }
+        val isVideo: Boolean get() = contentType.contains("video") || contentType.contains("octet-stream")
+                || url.lowercase().let { it.contains(".mp4") || it.contains(".webm") || it.contains(".mkv") }
+    }
 
     data class DownloadResult(
         val success: Boolean,
@@ -28,40 +40,43 @@ object VideoDownloader {
         val error: String? = null,
     )
 
-    /**
-     * Download a video from a direct URL.
-     * @param url Direct mp4/webm/m3u8 URL
-     * @param context Android context for cache dir
-     * @param onProgress (bytesDownloaded, totalBytes) → totalBytes may be -1 if unknown
-     */
+    /** Check video URL info without downloading (HEAD request) */
+    suspend fun getVideoInfo(url: String): VideoInfo = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url(url).head()
+                .header("User-Agent", "Mozilla/5.0 RecapMaker/2.2")
+                .build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                return@withContext VideoInfo(url, error = "HTTP ${response.code}")
+            }
+            val size = response.header("Content-Length")?.toLongOrNull() ?: -1
+            val type = response.header("Content-Type") ?: ""
+            VideoInfo(url, fileSize = size, contentType = type, valid = true)
+        } catch (e: Exception) {
+            VideoInfo(url, error = e.message ?: "Connection failed")
+        }
+    }
+
+    /** Download video with progress */
     suspend fun download(
-        url: String,
-        context: Context,
+        url: String, context: Context,
         onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> },
     ): DownloadResult = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) RecapMaker/2.2")
+            val request = Request.Builder().url(url)
+                .header("User-Agent", "Mozilla/5.0 RecapMaker/2.2")
                 .build()
-
             val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext DownloadResult(false, error = "HTTP ${response.code}: ${response.message}")
-            }
-
-            val body = response.body ?: return@withContext DownloadResult(false, error = "Empty response body")
+            if (!response.isSuccessful) return@withContext DownloadResult(false, error = "HTTP ${response.code}")
+            val body = response.body ?: return@withContext DownloadResult(false, error = "Empty response")
             val contentLength = body.contentLength()
 
-            // Determine extension from URL or content-type
             val ext = when {
                 url.contains(".mp4", true) -> "mp4"
                 url.contains(".webm", true) -> "webm"
-                url.contains(".m3u8", true) -> "m3u8"
-                response.header("Content-Type")?.contains("video/mp4") == true -> "mp4"
                 else -> "mp4"
             }
-
             val outputFile = File(context.cacheDir, "dl_${System.currentTimeMillis()}.$ext")
             var downloaded = 0L
 
@@ -76,27 +91,10 @@ object VideoDownloader {
                     }
                 }
             }
-
-            if (outputFile.length() == 0L) {
-                outputFile.delete()
-                return@withContext DownloadResult(false, error = "Downloaded file is empty")
-            }
-
+            if (outputFile.length() == 0L) { outputFile.delete(); return@withContext DownloadResult(false, error = "File empty") }
             DownloadResult(true, outputFile)
         } catch (e: Exception) {
             DownloadResult(false, error = e.message ?: "Download failed")
         }
-    }
-
-    /**
-     * Validate that a URL looks like a direct video link.
-     */
-    fun isDirectVideoUrl(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.startsWith("http") && (
-            lower.contains(".mp4") || lower.contains(".webm") || lower.contains(".mkv") ||
-            lower.contains(".m3u8") || lower.contains(".ts") || lower.contains("video") ||
-            lower.contains("mime=video")
-        )
     }
 }

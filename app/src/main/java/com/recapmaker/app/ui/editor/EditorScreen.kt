@@ -67,10 +67,10 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                             placeholder = { Text("https://...video.mp4", fontSize = 13.sp) }, singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple),
                             shape = RoundedCornerShape(12.dp, 0.dp, 0.dp, 12.dp))
-                        Button(onClick = { vm.downloadFromUrl(ctx) }, enabled = s.urlInput.isNotBlank() && !s.isDownloading,
+                        Button(onClick = { vm.checkUrlInfo() }, enabled = s.urlInput.isNotBlank() && !s.isDownloading && !s.isCheckingUrl,
                             shape = RoundedCornerShape(0.dp, 12.dp, 12.dp, 0.dp), modifier = Modifier.height(56.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Purple)) {
-                            if (s.isDownloading) CircularProgressIndicator(Modifier.size(18.dp), Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.Download, null)
+                            if (s.isDownloading || s.isCheckingUrl) CircularProgressIndicator(Modifier.size(18.dp), Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.Download, null)
                         }
                     }
                     // Download progress
@@ -252,6 +252,32 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // ═══ DOWNLOAD INFO POPUP ═══
+    if (s.showDownloadPopup && s.urlInfo != null) {
+        Dialog(onDismissRequest = { vm.dismissDownloadPopup() }) {
+            Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder)) {
+                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Download, null, tint = Purple, modifier = Modifier.size(40.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Video Download", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 17.sp)
+                    Spacer(Modifier.height(12.dp))
+                    Surface(color = SurfaceDark, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row { Text("Type: ", color = TextDim, fontSize = 12.sp); Text(s.urlInfo!!.contentType.ifBlank { "video" }, color = TextPrimary, fontSize = 12.sp) }
+                            Row { Text("Size: ", color = TextDim, fontSize = 12.sp); Text(s.urlInfo!!.fileSizeText, color = Emerald, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                            if (!s.urlInfo!!.isVideo) { Spacer(Modifier.height(4.dp)); Text("⚠ Video file မဟုတ်နိုင်ပါ", color = WarningYellow, fontSize = 11.sp) }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.dismissDownloadPopup() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("Cancel", color = TextDim) }
+                        Button(onClick = { vm.confirmDownload(ctx) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Emerald)) { Text("Download", color = DarkBg, fontWeight = FontWeight.SemiBold) }
                     }
                 }
             }

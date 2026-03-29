@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.data.model.BlurArea
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +30,6 @@ object FFmpegProcessor {
         val watermarkBox: Boolean = false,
         val watermarkBoxOpacity: Float = 0.5f,
         val ttsAudioPath: String? = null,
-        val fontPath: String? = null,
     )
 
     data class ProcessResult(
@@ -41,45 +39,40 @@ object FFmpegProcessor {
         val durationMs: Long = 0,
     )
 
-    /**
-     * Extract audio from video as MP3 for Groq STT.
-     * Returns the path to the extracted audio file.
-     */
-    suspend fun extractAudio(
-        videoPath: String,
-        context: Context,
-    ): String? = withContext(Dispatchers.IO) {
-        val outputFile = File(context.cacheDir, "audio_${System.currentTimeMillis()}.mp3")
-        val cmd = "-i \"$videoPath\" -vn -acodec libmp3lame -ar 16000 -ac 1 -b:a 64k -y \"${outputFile.absolutePath}\""
-        val session = FFmpegKit.execute(cmd)
-        if (ReturnCode.isSuccess(session.returnCode) && outputFile.exists() && outputFile.length() > 0) {
-            outputFile.absolutePath
-        } else {
-            outputFile.delete()
-            null
-        }
+    /** Extract audio → MP3 for AI transcription */
+    suspend fun extractAudio(videoPath: String, context: Context): String? = withContext(Dispatchers.IO) {
+        val out = File(context.cacheDir, "audio_${System.currentTimeMillis()}.mp3")
+        // NO quotes around paths — FFmpegKit passes args directly
+        val cmd = arrayOf("-i", videoPath, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-b:a", "64k", "-y", out.absolutePath)
+        val session = FFmpegKit.execute(cmd.joinToString(" "))
+        if (ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0) out.absolutePath
+        else { out.delete(); null }
     }
 
-    /**
-     * Process video with effects. TTS audio REPLACES original audio (no mix).
-     */
-    suspend fun process(
-        inputPath: String,
-        context: Context,
-        options: ProcessOptions,
-    ): ProcessResult = withContext(Dispatchers.IO) {
+    /** Convert PCM raw audio (from Gemini TTS) to MP3 */
+    suspend fun convertPcmToMp3(pcmPath: String, context: Context): String? = withContext(Dispatchers.IO) {
+        val out = File(context.cacheDir, "tts_mp3_${System.currentTimeMillis()}.mp3")
+        val cmd = "-f s16le -ar 24000 -ac 1 -i $pcmPath -acodec libmp3lame -ab 128k -y ${out.absolutePath}"
+        val session = FFmpegKit.execute(cmd)
+        if (ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0) out.absolutePath
+        else { out.delete(); null }
+    }
+
+    /** Main video processing — all effects on-device */
+    suspend fun process(inputPath: String, context: Context, options: ProcessOptions): ProcessResult = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         val outputFile = File(context.cacheDir, "processed_${System.currentTimeMillis()}.mp4")
         try {
             val cmd = buildCommand(inputPath, outputFile.absolutePath, options)
+            android.util.Log.d("FFmpeg", "CMD: $cmd")
             val session = FFmpegKit.execute(cmd)
-            if (ReturnCode.isSuccess(session.returnCode)) {
+            if (ReturnCode.isSuccess(session.returnCode) && outputFile.exists() && outputFile.length() > 0) {
                 ProcessResult(true, outputFile.absolutePath, durationMs = System.currentTimeMillis() - startTime)
             } else {
                 val logs = session.allLogsAsString ?: "Unknown error"
-                val lastLine = logs.lines().lastOrNull { it.isNotBlank() } ?: logs.take(200)
+                val lastLines = logs.lines().takeLast(5).joinToString("\n")
                 outputFile.delete()
-                ProcessResult(false, error = "FFmpeg: $lastLine")
+                ProcessResult(false, error = "FFmpeg failed:\n$lastLines")
             }
         } catch (e: Exception) {
             outputFile.delete()
@@ -88,99 +81,99 @@ object FFmpegProcessor {
     }
 
     private fun buildCommand(input: String, output: String, opts: ProcessOptions): String {
+        val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
+        val hasTts = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
         val videoFilters = mutableListOf<String>()
-        val sb = StringBuilder()
-        var hasTtsAudio = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
+        val audioFilters = mutableListOf<String>()
 
-        // ── Inputs ──
-        sb.append("-i \"$input\" ")
-        var inputIdx = 1
-
-        // Logo input
-        var logoInputIdx = -1
-        if (opts.logoPath != null && File(opts.logoPath).exists()) {
-            sb.append("-i \"${opts.logoPath}\" ")
-            logoInputIdx = inputIdx
-            inputIdx++
-        }
-
-        // TTS audio input (will REPLACE original audio)
-        var ttsInputIdx = -1
-        if (hasTtsAudio) {
-            sb.append("-i \"${opts.ttsAudioPath}\" ")
-            ttsInputIdx = inputIdx
-            inputIdx++
-        }
-
-        // ── Video filters ──
+        // ── Collect video filters ──
         if (opts.flip) videoFilters.add("hflip")
         if (opts.noise) videoFilters.add("noise=alls=10:allf=t+u")
-
-        for (area in opts.blurAreas) {
-            if (area.w > 0 && area.h > 0) {
-                videoFilters.add("delogo=x=${area.x}:y=${area.y}:w=${area.w}:h=${area.h}")
-            }
-        }
-
-        // Speed (video)
         if (opts.speed) videoFilters.add("setpts=PTS/1.05")
-
-        // Text watermark
+        for (a in opts.blurAreas) {
+            if (a.w > 0 && a.h > 0) videoFilters.add("delogo=x=${a.x}:y=${a.y}:w=${a.w}:h=${a.h}")
+        }
         if (opts.watermarkText.isNotBlank()) {
             val clean = opts.watermarkText.replace(":", "\\:").replace("'", "\\'")
             val color = "0x${opts.watermarkColor.removePrefix("#")}"
-            val (x, y) = positionToXY(opts.watermarkPosition)
-            val scrollX = if (opts.watermarkScroll) "mod(t*60\\,w+tw)-tw" else x
-            val boxOpt = if (opts.watermarkBox) ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
-            val fontOpt = if (opts.fontPath != null) ":fontfile='${opts.fontPath}'" else ""
-            videoFilters.add("drawtext=text='$clean':fontsize=${opts.watermarkSize}:fontcolor=$color:x=$scrollX:y=$y$boxOpt$fontOpt")
+            val (x, y) = posXY(opts.watermarkPosition)
+            val sx = if (opts.watermarkScroll) "mod(t*60\\,w+tw)-tw" else x
+            val box = if (opts.watermarkBox) ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
+            videoFilters.add("drawtext=text='$clean':fontsize=${opts.watermarkSize}:fontcolor=$color:x=$sx:y=$y$box")
         }
 
-        // ── Build filter complex for logo overlay ──
-        if (logoInputIdx >= 0) {
-            // Scale logo and overlay
+        // ── Collect audio filters (only when NOT replacing with TTS) ──
+        if (!hasTts) {
+            if (opts.speed) audioFilters.add("atempo=1.05")
+            // pitch shift without rubberband (LGPL safe)
+            if (opts.pitch) { audioFilters.add("asetrate=44100*0.94"); audioFilters.add("aresample=44100") }
+        } else {
+            if (opts.speed) audioFilters.add("atempo=1.05")
+        }
+
+        // ── Check: any processing needed? ──
+        val hasVideoFilters = videoFilters.isNotEmpty()
+        val noProcessing = !hasVideoFilters && !hasLogo && !hasTts && audioFilters.isEmpty()
+
+        if (noProcessing) {
+            // Simple copy — no re-encoding needed
+            return "-i $input -c copy -y $output"
+        }
+
+        // ── Build command ──
+        val sb = StringBuilder()
+        sb.append("-i $input ")
+        var nextInput = 1
+
+        // Logo input
+        val logoIdx: Int
+        if (hasLogo) {
+            sb.append("-i ${opts.logoPath} ")
+            logoIdx = nextInput; nextInput++
+        } else logoIdx = -1
+
+        // TTS input
+        val ttsIdx: Int
+        if (hasTts) {
+            sb.append("-i ${opts.ttsAudioPath} ")
+            ttsIdx = nextInput; nextInput++
+        } else ttsIdx = -1
+
+        // ── Video chain ──
+        if (hasLogo) {
             val lw = opts.logoW.coerceAtLeast(10)
             val lh = opts.logoH.coerceAtLeast(10)
-            // If we have other video filters, apply them first then overlay
-            if (videoFilters.isNotEmpty()) {
-                val vfChain = videoFilters.joinToString(",")
-                sb.append("-filter_complex \"[0:v]${vfChain}[vf];[$logoInputIdx:v]scale=$lw:$lh[logo];[vf][logo]overlay=${opts.logoX}:${opts.logoY}[vout]\" ")
-                sb.append("-map \"[vout]\" ")
-            } else {
-                sb.append("-filter_complex \"[$logoInputIdx:v]scale=$lw:$lh[logo];[0:v][logo]overlay=${opts.logoX}:${opts.logoY}[vout]\" ")
-                sb.append("-map \"[vout]\" ")
-            }
-        } else if (videoFilters.isNotEmpty()) {
-            sb.append("-vf \"${videoFilters.joinToString(",")}\" ")
-        }
-
-        // ── Audio mapping ──
-        if (hasTtsAudio) {
-            // TTS REPLACES original audio completely
-            sb.append("-map $ttsInputIdx:a ")
-            // Speed adjust TTS audio if speed enabled
-            if (opts.speed) {
-                sb.append("-af \"atempo=1.05\" ")
-            }
+            val vfChain = if (hasVideoFilters) "[0:v]${videoFilters.joinToString(",")}[vf];[vf]" else "[0:v]"
+            sb.append("-filter_complex ")
+            sb.append("[$logoIdx:v]scale=$lw:$lh[logo];${vfChain}[logo]overlay=${opts.logoX}:${opts.logoY}[vout] ")
+            sb.append("-map [vout] ")
+        } else if (hasVideoFilters) {
+            sb.append("-vf ${videoFilters.joinToString(",")} ")
+            sb.append("-map 0:v ")
         } else {
-            // Use original audio
-            sb.append("-map 0:a? ")
-            val audioFilters = mutableListOf<String>()
-            if (opts.speed) audioFilters.add("atempo=1.05")
-            if (opts.pitch) audioFilters.add("rubberband=pitch=0.94")
-            if (audioFilters.isNotEmpty()) sb.append("-af \"${audioFilters.joinToString(",")}\" ")
+            sb.append("-map 0:v ")
         }
 
-        // ── Output settings ──
-        sb.append("-c:v libx264 -preset medium -crf 18 ")
+        // ── Audio chain ──
+        if (hasTts) {
+            sb.append("-map $ttsIdx:a ")
+        } else {
+            sb.append("-map 0:a? ")
+        }
+        if (audioFilters.isNotEmpty()) {
+            sb.append("-af ${audioFilters.joinToString(",")} ")
+        }
+
+        // ── Encoding (LGPL safe — no libx264) ──
+        sb.append("-c:v mpeg4 -q:v 3 ")  // mpeg4 with quality 3 (good quality)
         sb.append("-c:a aac -b:a 128k ")
         sb.append("-movflags +faststart -shortest ")
-        sb.append("-y \"$output\"")
+        sb.append("-y $output")
 
         return sb.toString()
     }
 
-    private fun positionToXY(position: String): Pair<String, String> = when (position) {
+    private fun posXY(pos: String): Pair<String, String> = when (pos) {
         "top_left" -> "20" to "20"
         "top_center" -> "(w-text_w)/2" to "20"
         "top_right" -> "w-tw-20" to "20"
@@ -191,26 +184,37 @@ object FFmpegProcessor {
         else -> "(w-text_w)/2" to "h-th-20"
     }
 
-    suspend fun saveToGallery(
-        context: Context, inputFile: File,
-        displayName: String = "RecapMaker_${System.currentTimeMillis()}",
-    ): String? = withContext(Dispatchers.IO) {
+    /**
+     * Save processed video to Gallery → Movies/RecapMaker/
+     * Returns content URI string or null
+     */
+    suspend fun saveToGallery(context: Context, inputFile: File): String? = withContext(Dispatchers.IO) {
         try {
+            val displayName = "RecapMaker_${System.currentTimeMillis()}"
             val values = ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME, "$displayName.mp4")
                 put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/RecapMaker")
+                    put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/RecapMaker")
                     put(MediaStore.Video.Media.IS_PENDING, 1)
                 }
             }
-            val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return@withContext null
-            context.contentResolver.openOutputStream(uri)?.use { out -> inputFile.inputStream().use { it.copyTo(out) } }
+            val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: return@withContext null
+
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                inputFile.inputStream().use { inp -> inp.copyTo(out) }
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.clear(); values.put(MediaStore.Video.Media.IS_PENDING, 0)
+                values.clear()
+                values.put(MediaStore.Video.Media.IS_PENDING, 0)
                 context.contentResolver.update(uri, values, null, null)
             }
             uri.toString()
-        } catch (_: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.e("FFmpeg", "Gallery save failed: ${e.message}")
+            null
+        }
     }
 }
