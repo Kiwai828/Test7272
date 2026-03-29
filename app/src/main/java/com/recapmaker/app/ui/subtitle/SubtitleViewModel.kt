@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.recapmaker.app.data.model.PricingTier
 import com.recapmaker.app.data.repository.MainRepository
 import com.recapmaker.app.data.repository.Result
+import com.recapmaker.app.media.FFmpegProcessor
 import com.recapmaker.app.media.VideoDownloader
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
@@ -24,11 +25,13 @@ data class SubtitleState(
     val pricingTiers: List<PricingTier> = emptyList(),
     val videoUri: Uri? = null, val videoLocalPath: String? = null,
     val videoFilename: String? = null, val videoDuration: Int = 0,
-    val urlInput: String = "", val isDownloading: Boolean = false, val downloadProgress: Float = 0f,
+    val urlInput: String = "",
+    val isCheckingUrl: Boolean = false,
+    val videoInfo: VideoDownloader.VideoInfo? = null,
+    val showResolutionPopup: Boolean = false,
+    val isDownloading: Boolean = false, val downloadProgress: Float = 0f,
     val fontColor: String = "#FFFFFF", val fontSize: Float = 16f,
     val boxEnabled: Boolean = true, val position: String = "bottom_center",
-    val flipEnabled: Boolean = false, val speedEnabled: Boolean = false,
-    val noiseEnabled: Boolean = false, val blurEnabled: Boolean = false,
     val isProcessing: Boolean = false, val error: String? = null,
 )
 
@@ -52,27 +55,41 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
             try {
                 val temp = File(context.cacheDir, "sub_in_${System.currentTimeMillis()}.mp4")
                 uri.copyToFile(context, temp)
+                if (!temp.exists() || temp.length() == 0L) { state = state.copy(error = "File ဖတ်မရ"); return@launch }
                 val mmr = MediaMetadataRetriever(); mmr.setDataSource(temp.absolutePath)
                 val dur = (mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000
                 mmr.release()
                 state = state.copy(videoLocalPath = temp.absolutePath, videoDuration = dur.toInt(), videoFilename = uri.lastPathSegment ?: "video.mp4")
-            } catch (e: Exception) { state = state.copy(error = "Video ဖတ်၍မရပါ: ${e.message}") }
+            } catch (e: Exception) { state = state.copy(error = "Video: ${e.message}") }
         }
     }
 
     fun updateUrl(v: String) { state = state.copy(urlInput = v) }
-    fun downloadFromUrl(context: Context) {
-        if (state.urlInput.isBlank()) return
+
+    fun checkUrlInfo(context: Context) {
+        val url = state.urlInput.trim()
+        if (url.isBlank()) return
         viewModelScope.launch {
-            state = state.copy(isDownloading = true, downloadProgress = 0f, error = null)
-            val result = VideoDownloader.download(state.urlInput.trim(), context) { dl, total ->
-                state = state.copy(downloadProgress = if (total > 0) dl.toFloat() / total else 0f)
-            }
+            state = state.copy(isCheckingUrl = true, error = null)
+            val info = VideoDownloader.getVideoInfo(url, context)
+            if (info.valid) state = state.copy(isCheckingUrl = false, videoInfo = info, showResolutionPopup = true)
+            else state = state.copy(isCheckingUrl = false, error = info.error ?: "URL စစ်မရ")
+        }
+    }
+
+    fun dismissResolutionPopup() { state = state.copy(showResolutionPopup = false) }
+
+    fun downloadWithFormat(context: Context, format: VideoDownloader.VideoFormat) {
+        val info = state.videoInfo ?: return
+        state = state.copy(showResolutionPopup = false, isDownloading = true, downloadProgress = 0f)
+        viewModelScope.launch {
+            val result = VideoDownloader.download(info.url, context, format.formatId, info.isDirectUrl) { p -> state = state.copy(downloadProgress = p) }
             if (result.success && result.file != null) {
                 var dur = 0
                 try { val mmr = MediaMetadataRetriever(); mmr.setDataSource(result.file.absolutePath); dur = ((mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000).toInt(); mmr.release() } catch (_: Exception) {}
-                state = state.copy(isDownloading = false, videoUri = Uri.fromFile(result.file), videoLocalPath = result.file.absolutePath, videoFilename = result.file.name, videoDuration = dur, urlInput = "")
-            } else state = state.copy(isDownloading = false, error = result.error ?: "Download failed")
+                state = state.copy(isDownloading = false, videoUri = Uri.fromFile(result.file), videoLocalPath = result.file.absolutePath,
+                    videoFilename = info.title.take(50).ifBlank { result.file.name }, videoDuration = if (dur > 0) dur else info.duration, urlInput = "", videoInfo = null)
+            } else state = state.copy(isDownloading = false, error = result.error ?: "Download fail")
         }
     }
 
@@ -80,10 +97,6 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
     fun setFontColor(c: String) { state = state.copy(fontColor = c) }
     fun toggleBox(v: Boolean) { state = state.copy(boxEnabled = v) }
     fun setPosition(p: String) { state = state.copy(position = p) }
-    fun toggleFlip(v: Boolean) { state = state.copy(flipEnabled = v) }
-    fun toggleSpeed(v: Boolean) { state = state.copy(speedEnabled = v) }
-    fun toggleNoise(v: Boolean) { state = state.copy(noiseEnabled = v) }
-    fun toggleBlur(v: Boolean) { state = state.copy(blurEnabled = v) }
 
     fun startProcessing(context: Context) {
         if (state.videoLocalPath == null) { state = state.copy(error = "Video ရွေးပါ"); return }
@@ -93,10 +106,10 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
             if (cost > 0) {
                 when (val r = repo.deductCoins(cost, "Subtitle ${state.videoDuration}s")) {
                     is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver)
-                    is Result.Error -> { state = state.copy(isProcessing = false, error = "Coins မလုံလောက်: ${r.message}"); return@launch }
+                    is Result.Error -> { state = state.copy(isProcessing = false, error = "Coins: ${r.message}"); return@launch }
                 }
             }
-            // TODO: Extract audio → /api/ai/stt → SRT → FFmpeg-Kit burn subtitles
+            // TODO: Extract audio → /api/ai/stt → SRT → FFmpeg burn subtitles
             kotlinx.coroutines.delay(2000)
             state = state.copy(isProcessing = false)
             loadCoins()

@@ -1,6 +1,8 @@
 package com.recapmaker.app.media
 
 import android.content.Context
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -11,28 +13,32 @@ import java.util.concurrent.TimeUnit
 
 object VideoDownloader {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.MINUTES)
-        .followRedirects(true).followSslRedirects(true)
-        .build()
+    /** A single downloadable format/resolution */
+    data class VideoFormat(
+        val formatId: String,
+        val ext: String,
+        val resolution: String,     // e.g. "720p", "1080p", "audio only"
+        val fileSize: Long = -1,    // bytes
+        val note: String = "",
+    ) {
+        val label: String get() = buildString {
+            append(resolution)
+            if (note.isNotBlank()) append(" ($note)")
+            if (fileSize > 0) append(" • ${"%.1f".format(fileSize / (1024.0 * 1024.0))}MB")
+        }
+    }
 
-    /** Video info from HEAD request */
+    /** Info about a video URL — title, thumbnail, available formats */
     data class VideoInfo(
         val url: String,
-        val fileSize: Long = -1,        // bytes, -1 = unknown
-        val contentType: String = "",   // e.g. video/mp4
+        val title: String = "",
+        val duration: Int = 0,       // seconds
+        val thumbnail: String = "",
+        val formats: List<VideoFormat> = emptyList(),
         val valid: Boolean = false,
         val error: String? = null,
-    ) {
-        val fileSizeText: String get() = when {
-            fileSize < 0 -> "Unknown"
-            fileSize < 1024 * 1024 -> "${"%.1f".format(fileSize / 1024.0)} KB"
-            else -> "${"%.1f".format(fileSize / (1024.0 * 1024.0))} MB"
-        }
-        val isVideo: Boolean get() = contentType.contains("video") || contentType.contains("octet-stream")
-                || url.lowercase().let { it.contains(".mp4") || it.contains(".webm") || it.contains(".mkv") }
-    }
+        val isDirectUrl: Boolean = false, // true = direct mp4 link (no yt-dlp needed)
+    )
 
     data class DownloadResult(
         val success: Boolean,
@@ -40,61 +46,158 @@ object VideoDownloader {
         val error: String? = null,
     )
 
-    /** Check video URL info without downloading (HEAD request) */
-    suspend fun getVideoInfo(url: String): VideoInfo = withContext(Dispatchers.IO) {
+    /**
+     * Get video info from URL using yt-dlp.
+     * Returns title, duration, and list of available formats/resolutions.
+     * Falls back to HEAD request for direct mp4 URLs.
+     */
+    suspend fun getVideoInfo(url: String, context: Context): VideoInfo = withContext(Dispatchers.IO) {
+        val lower = url.lowercase()
+        val isDirectLink = lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".mkv") || lower.contains("mime=video")
+
+        if (isDirectLink) {
+            // Direct URL — use HEAD request
+            return@withContext getDirectUrlInfo(url)
+        }
+
+        // yt-dlp — get video info with available formats
         try {
-            val request = Request.Builder().url(url).head()
-                .header("User-Agent", "Mozilla/5.0 RecapMaker/2.2")
-                .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext VideoInfo(url, error = "HTTP ${response.code}")
+            val request = YoutubeDLRequest(url)
+            request.addOption("--dump-json")
+            request.addOption("--no-download")
+            val info = YoutubeDL.getInstance().getInfo(request)
+
+            val formats = mutableListOf<VideoFormat>()
+            info.formats?.forEach { fmt ->
+                val height = fmt.height ?: 0
+                val vcodec = fmt.vcodec ?: "none"
+                // Only include formats with video (not audio-only)
+                if (height > 0 && vcodec != "none") {
+                    formats.add(VideoFormat(
+                        formatId = fmt.formatId ?: "",
+                        ext = fmt.ext ?: "mp4",
+                        resolution = "${height}p",
+                        fileSize = fmt.filesize ?: -1,
+                        note = fmt.formatNote ?: "",
+                    ))
+                }
             }
-            val size = response.header("Content-Length")?.toLongOrNull() ?: -1
-            val type = response.header("Content-Type") ?: ""
-            VideoInfo(url, fileSize = size, contentType = type, valid = true)
+
+            // Sort by resolution descending, remove duplicates
+            val uniqueFormats = formats
+                .sortedByDescending { it.resolution.replace("p", "").toIntOrNull() ?: 0 }
+                .distinctBy { it.resolution }
+
+            // Add "best" option at top
+            val allFormats = mutableListOf(
+                VideoFormat("best", "mp4", "Auto (Best)", note = "Recommended")
+            ) + uniqueFormats
+
+            VideoInfo(
+                url = url,
+                title = info.title ?: "Video",
+                duration = info.duration?.toInt() ?: 0,
+                thumbnail = info.thumbnail ?: "",
+                formats = allFormats,
+                valid = true,
+            )
         } catch (e: Exception) {
-            VideoInfo(url, error = e.message ?: "Connection failed")
+            // yt-dlp failed — try as direct URL
+            val directInfo = getDirectUrlInfo(url)
+            if (directInfo.valid) directInfo
+            else VideoInfo(url, error = "URL မှ video info ရယူ၍မရပါ: ${e.message?.take(100)}")
         }
     }
 
-    /** Download video with progress */
+    private fun getDirectUrlInfo(url: String): VideoInfo {
+        return try {
+            val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).build()
+            val request = Request.Builder().url(url).head().header("User-Agent", "Mozilla/5.0 RecapMaker").build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return VideoInfo(url, error = "HTTP ${response.code}")
+            val size = response.header("Content-Length")?.toLongOrNull() ?: -1
+            val type = response.header("Content-Type") ?: ""
+            VideoInfo(
+                url = url,
+                title = url.substringAfterLast("/").substringBefore("?").take(50),
+                formats = listOf(VideoFormat("direct", "mp4", "Direct Download", fileSize = size)),
+                valid = true,
+                isDirectUrl = true,
+            )
+        } catch (e: Exception) {
+            VideoInfo(url, error = e.message)
+        }
+    }
+
+    /**
+     * Download video with selected format.
+     * Uses yt-dlp for YouTube/TikTok/etc, OkHttp for direct URLs.
+     */
     suspend fun download(
         url: String, context: Context,
-        onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> },
+        formatId: String = "best",
+        isDirectUrl: Boolean = false,
+        onProgress: (Float) -> Unit = {},
     ): DownloadResult = withContext(Dispatchers.IO) {
+        if (isDirectUrl || formatId == "direct") {
+            return@withContext downloadDirect(url, context, onProgress)
+        }
+
+        // yt-dlp download
         try {
-            val request = Request.Builder().url(url)
-                .header("User-Agent", "Mozilla/5.0 RecapMaker/2.2")
-                .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext DownloadResult(false, error = "HTTP ${response.code}")
-            val body = response.body ?: return@withContext DownloadResult(false, error = "Empty response")
-            val contentLength = body.contentLength()
+            val outputDir = File(context.cacheDir, "ytdl")
+            outputDir.mkdirs()
+            val outputTemplate = "${outputDir.absolutePath}/%(title).50s.%(ext)s"
 
-            val ext = when {
-                url.contains(".mp4", true) -> "mp4"
-                url.contains(".webm", true) -> "webm"
-                else -> "mp4"
+            val request = YoutubeDLRequest(url)
+            request.addOption("-f", if (formatId == "best") "best[ext=mp4]/best" else "$formatId+bestaudio/best")
+            request.addOption("-o", outputTemplate)
+            request.addOption("--merge-output-format", "mp4")
+            request.addOption("--no-mtime")
+
+            YoutubeDL.getInstance().execute(request) { progress, _, _ ->
+                onProgress(progress / 100f)
             }
-            val outputFile = File(context.cacheDir, "dl_${System.currentTimeMillis()}.$ext")
-            var downloaded = 0L
 
+            // Find downloaded file
+            val files = outputDir.listFiles()?.filter { it.length() > 0 }?.sortedByDescending { it.lastModified() }
+            val downloadedFile = files?.firstOrNull()
+
+            if (downloadedFile != null && downloadedFile.exists()) {
+                // Move to cache root for consistency
+                val destFile = File(context.cacheDir, "dl_${System.currentTimeMillis()}.mp4")
+                downloadedFile.renameTo(destFile)
+                DownloadResult(true, destFile)
+            } else {
+                DownloadResult(false, error = "Download ပြီးပေမယ့် file မတွေ့ပါ")
+            }
+        } catch (e: Exception) {
+            DownloadResult(false, error = "Download failed: ${e.message?.take(150)}")
+        }
+    }
+
+    private fun downloadDirect(url: String, context: Context, onProgress: (Float) -> Unit): DownloadResult {
+        return try {
+            val client = OkHttpClient.Builder().readTimeout(10, TimeUnit.MINUTES).followRedirects(true).build()
+            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0 RecapMaker").build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return DownloadResult(false, error = "HTTP ${response.code}")
+            val body = response.body ?: return DownloadResult(false, error = "Empty response")
+            val total = body.contentLength()
+            val outFile = File(context.cacheDir, "dl_${System.currentTimeMillis()}.mp4")
+            var downloaded = 0L
             body.byteStream().use { input ->
-                FileOutputStream(outputFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        onProgress(downloaded, contentLength)
+                FileOutputStream(outFile).use { output ->
+                    val buf = ByteArray(8192); var n: Int
+                    while (input.read(buf).also { n = it } != -1) {
+                        output.write(buf, 0, n); downloaded += n
+                        if (total > 0) onProgress(downloaded.toFloat() / total)
                     }
                 }
             }
-            if (outputFile.length() == 0L) { outputFile.delete(); return@withContext DownloadResult(false, error = "File empty") }
-            DownloadResult(true, outputFile)
+            if (outFile.length() > 0) DownloadResult(true, outFile) else { outFile.delete(); DownloadResult(false, error = "Empty file") }
         } catch (e: Exception) {
-            DownloadResult(false, error = e.message ?: "Download failed")
+            DownloadResult(false, error = e.message)
         }
     }
 }

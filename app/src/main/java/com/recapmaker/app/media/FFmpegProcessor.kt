@@ -39,20 +39,20 @@ object FFmpegProcessor {
         val durationMs: Long = 0,
     )
 
-    /** Extract audio → MP3 for AI transcription */
+    /** Extract audio → AAC for AI transcription */
     suspend fun extractAudio(videoPath: String, context: Context): String? = withContext(Dispatchers.IO) {
-        val out = File(context.cacheDir, "audio_${System.currentTimeMillis()}.mp3")
-        // NO quotes around paths — FFmpegKit passes args directly
-        val cmd = arrayOf("-i", videoPath, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-b:a", "64k", "-y", out.absolutePath)
-        val session = FFmpegKit.execute(cmd.joinToString(" "))
+        val out = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
+        val cmd = "-i $videoPath -vn -c:a aac -ar 16000 -ac 1 -b:a 64k -y ${out.absolutePath}"
+        val session = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0) out.absolutePath
         else { out.delete(); null }
     }
 
-    /** Convert PCM raw audio (from Gemini TTS) to MP3 */
+    /** Convert PCM raw audio (from Gemini TTS: s16le 24kHz mono) to playable audio */
     suspend fun convertPcmToMp3(pcmPath: String, context: Context): String? = withContext(Dispatchers.IO) {
-        val out = File(context.cacheDir, "tts_mp3_${System.currentTimeMillis()}.mp3")
-        val cmd = "-f s16le -ar 24000 -ac 1 -i $pcmPath -acodec libmp3lame -ab 128k -y ${out.absolutePath}"
+        // Try AAC first (always available in LGPL build)
+        val out = File(context.cacheDir, "tts_audio_${System.currentTimeMillis()}.m4a")
+        val cmd = "-f s16le -ar 24000 -ac 1 -i $pcmPath -c:a aac -b:a 128k -y ${out.absolutePath}"
         val session = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0) out.absolutePath
         else { out.delete(); null }
@@ -139,29 +139,41 @@ object FFmpegProcessor {
             ttsIdx = nextInput; nextInput++
         } else ttsIdx = -1
 
-        // ── Video chain ──
+        // ── Video + Audio chain ──
+        // When using filter_complex (logo), audio filters must also be in filter_complex
+        // to avoid -map + -af conflict
+        val needsComplexAudio = hasLogo && audioFilters.isNotEmpty()
+        val audioSrc = if (hasTts) "$ttsIdx:a" else "0:a"
+
         if (hasLogo) {
             val lw = opts.logoW.coerceAtLeast(10)
             val lh = opts.logoH.coerceAtLeast(10)
             val vfChain = if (hasVideoFilters) "[0:v]${videoFilters.joinToString(",")}[vf];[vf]" else "[0:v]"
             sb.append("-filter_complex ")
-            sb.append("[$logoIdx:v]scale=$lw:$lh[logo];${vfChain}[logo]overlay=${opts.logoX}:${opts.logoY}[vout] ")
+            val fc = StringBuilder()
+            fc.append("[$logoIdx:v]scale=$lw:$lh[logo];${vfChain}[logo]overlay=${opts.logoX}:${opts.logoY}[vout]")
+            if (needsComplexAudio) {
+                fc.append(";[$audioSrc]${audioFilters.joinToString(",")}[aout]")
+            }
+            sb.append("$fc ")
             sb.append("-map [vout] ")
+            if (needsComplexAudio) {
+                sb.append("-map [aout] ")
+            } else if (hasTts) {
+                sb.append("-map $ttsIdx:a ")
+            } else {
+                sb.append("-map 0:a? ")
+            }
         } else if (hasVideoFilters) {
             sb.append("-vf ${videoFilters.joinToString(",")} ")
             sb.append("-map 0:v ")
+            // Audio
+            if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
+            if (audioFilters.isNotEmpty()) sb.append("-af ${audioFilters.joinToString(",")} ")
         } else {
             sb.append("-map 0:v ")
-        }
-
-        // ── Audio chain ──
-        if (hasTts) {
-            sb.append("-map $ttsIdx:a ")
-        } else {
-            sb.append("-map 0:a? ")
-        }
-        if (audioFilters.isNotEmpty()) {
-            sb.append("-af ${audioFilters.joinToString(",")} ")
+            if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
+            if (audioFilters.isNotEmpty()) sb.append("-af ${audioFilters.joinToString(",")} ")
         }
 
         // ── Encoding (LGPL safe — no libx264) ──

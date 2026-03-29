@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.recapmaker.app.ui.common.*
 
@@ -38,7 +41,6 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                 }
             }
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
                 SectionCard("Video File", Icons.Default.VideoFile, Emerald) {
                     OutlinedButton(onClick = { picker.launch("video/*") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, if (s.videoUri != null) Emerald else CardBorder)) {
@@ -48,17 +50,17 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         HorizontalDivider(Modifier.weight(1f), color = CardBorder); Text("  OR  ", color = TextDim, fontSize = 12.sp, fontWeight = FontWeight.Bold); HorizontalDivider(Modifier.weight(1f), color = CardBorder)
                     }
-                    Text("Direct video URL (mp4) ထည့်ပါ", color = TextDim, fontSize = 11.sp)
+                    Text("YouTube / TikTok / Facebook / direct URL", color = TextDim, fontSize = 11.sp)
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(value = s.urlInput, onValueChange = { vm.updateUrl(it) }, modifier = Modifier.weight(1f),
-                            placeholder = { Text("https://...mp4", fontSize = 13.sp) }, singleLine = true,
+                            placeholder = { Text("URL paste...", fontSize = 13.sp) }, singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Emerald, unfocusedBorderColor = CardBorder, cursorColor = Emerald),
                             shape = RoundedCornerShape(12.dp, 0.dp, 0.dp, 12.dp))
-                        Button(onClick = { vm.downloadFromUrl(ctx) }, enabled = s.urlInput.isNotBlank() && !s.isDownloading,
+                        Button(onClick = { vm.checkUrlInfo(ctx) }, enabled = s.urlInput.isNotBlank() && !s.isDownloading && !s.isCheckingUrl,
                             shape = RoundedCornerShape(0.dp, 12.dp, 12.dp, 0.dp), modifier = Modifier.height(56.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Emerald)) {
-                            if (s.isDownloading) CircularProgressIndicator(Modifier.size(18.dp), Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.Download, null, tint = DarkBg)
+                            if (s.isDownloading || s.isCheckingUrl) CircularProgressIndicator(Modifier.size(18.dp), Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.Download, null, tint = DarkBg)
                         }
                     }
                     AnimatedVisibility(s.isDownloading) {
@@ -76,26 +78,10 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                     EffectToggle("Background Box", Icons.Default.CheckBoxOutlineBlank, s.boxEnabled) { vm.toggleBox(it) }
                     Spacer(Modifier.height(8.dp)); Text("Position", color = TextDim, fontSize = 13.sp)
                     Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("top_center" to "Top", "middle" to "Middle", "bottom_center" to "Bottom").forEach { (v, l) ->
+                        listOf("top_center" to "Top", "bottom_center" to "Bottom").forEach { (v, l) ->
                             FilterChip(selected = s.position == v, onClick = { vm.setPosition(v) }, label = { Text(l, fontSize = 12.sp) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Purple, selectedLabelColor = TextPrimary))
                         }
-                    }
-                    Spacer(Modifier.height(8.dp)); Text("Font Color", color = TextDim, fontSize = 13.sp); Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("#FFFFFF", "#FFFF00", "#00FF00", "#00FFFF", "#FF0000", "#FF69B4").forEach { hex ->
-                            val c = try { Color(android.graphics.Color.parseColor(hex)) } catch (_: Exception) { Color.White }
-                            Box(Modifier.size(30.dp).background(c, RoundedCornerShape(8.dp)).border(2.dp, if (s.fontColor.equals(hex, true)) Purple else Color.Transparent, RoundedCornerShape(8.dp)).clickable { vm.setFontColor(hex) })
-                        }
-                    }
-                }
-
-                SectionCard("Effect များ", Icons.Default.Tune, Purple) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        EffectToggle("Flip", Icons.Default.SwapHoriz, s.flipEnabled) { vm.toggleFlip(it) }
-                        EffectToggle("Speed", Icons.Default.Speed, s.speedEnabled) { vm.toggleSpeed(it) }
-                        EffectToggle("Noise", Icons.Default.Grain, s.noiseEnabled) { vm.toggleNoise(it) }
-                        EffectToggle("Blur", Icons.Default.BlurOn, s.blurEnabled, switchColor = Rose) { vm.toggleBlur(it) }
                     }
                 }
 
@@ -105,5 +91,44 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
             }
         }
         s.error?.let { msg -> Surface(Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(), color = ErrorRed.copy(0.9f), shape = RoundedCornerShape(12.dp)) { Row(Modifier.padding(14.dp)) { Text(msg, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f)); IconButton(onClick = { vm.clearError() }) { Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(18.dp)) } } }; LaunchedEffect(msg) { kotlinx.coroutines.delay(4000); vm.clearError() } }
+    }
+
+    // ═══ RESOLUTION POPUP ═══
+    if (s.showResolutionPopup && s.videoInfo != null) {
+        Dialog(onDismissRequest = { vm.dismissResolutionPopup() }) {
+            Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.VideoFile, null, tint = Emerald, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(s.videoInfo!!.title.take(60), fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp, maxLines = 2)
+                            if (s.videoInfo!!.duration > 0) Text("${s.videoInfo!!.duration / 60}:${"%02d".format(s.videoInfo!!.duration % 60)}", color = TextDim, fontSize = 12.sp)
+                        }
+                        IconButton(onClick = { vm.dismissResolutionPopup() }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, tint = TextDim, modifier = Modifier.size(18.dp)) }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Resolution ရွေးပါ", color = TextDim, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(s.videoInfo!!.formats) { fmt ->
+                            Surface(onClick = { vm.downloadWithFormat(ctx, fmt) }, color = if (fmt.formatId == "best") Emerald.copy(0.15f) else SurfaceDark,
+                                shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, if (fmt.formatId == "best") Emerald.copy(0.3f) else CardBorder)) {
+                                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(if (fmt.formatId == "best") Icons.Default.AutoAwesome else Icons.Default.HighQuality, null, tint = if (fmt.formatId == "best") Emerald else Purple, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(fmt.resolution, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontSize = 14.sp)
+                                        if (fmt.note.isNotBlank()) Text(fmt.note, color = TextDim, fontSize = 11.sp)
+                                    }
+                                    if (fmt.fileSize > 0) Text("${"%.1f".format(fmt.fileSize / (1024.0 * 1024.0))}MB", color = TextDim, fontSize = 11.sp)
+                                    Spacer(Modifier.width(8.dp)); Icon(Icons.Default.Download, null, tint = TextDim, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -102,4 +102,10 @@ dependencies {
     // Coil (image loading)
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-video:2.7.0")
+
+    // yt-dlp for Android — download from YouTube, TikTok, Facebook, 1000+ sites
+    val ytdlAndroid = "0.18.1"
+    implementation("io.github.junkfood02.youtubedl-android:library:$ytdlAndroid")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$ytdlAndroid")
+    implementation("io.github.junkfood02.youtubedl-android:aria2c:$ytdlAndroid")
 }
