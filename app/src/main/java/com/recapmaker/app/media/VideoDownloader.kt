@@ -63,25 +63,31 @@ object VideoDownloader {
         // yt-dlp — get video info with available formats
         try {
             val request = YoutubeDLRequest(url)
-            request.addOption("--dump-json")
-            request.addOption("--no-download")
             val info = YoutubeDL.getInstance().getInfo(request)
 
             val formats = mutableListOf<VideoFormat>()
-            info.formats?.forEach { fmt ->
-                val height = fmt.height ?: 0
-                val vcodec = fmt.vcodec ?: "none"
-                // Only include formats with video (not audio-only)
-                if (height > 0 && vcodec != "none") {
-                    formats.add(VideoFormat(
-                        formatId = fmt.formatId ?: "",
-                        ext = fmt.ext ?: "mp4",
-                        resolution = "${height}p",
-                        fileSize = fmt.filesize ?: -1,
-                        note = fmt.formatNote ?: "",
-                    ))
+
+            // Parse formats safely — field names may vary across library versions
+            try {
+                info.formats?.forEach { fmt ->
+                    try {
+                        val formatId = fmt.formatId ?: return@forEach
+                        val height = fmt.height ?: 0
+                        val ext = fmt.ext ?: "mp4"
+                        val note = fmt.formatNote ?: ""
+                        // Only video formats (not audio-only)
+                        if (height > 0) {
+                            formats.add(VideoFormat(
+                                formatId = formatId,
+                                ext = ext,
+                                resolution = "${height}p",
+                                fileSize = -1, // skip filesize — field name unreliable across versions
+                                note = note,
+                            ))
+                        }
+                    } catch (_: Exception) { /* skip bad format entry */ }
                 }
-            }
+            } catch (_: Exception) { /* formats parsing failed — use "best" only */ }
 
             // Sort by resolution descending, remove duplicates
             val uniqueFormats = formats
