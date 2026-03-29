@@ -19,6 +19,7 @@ import com.recapmaker.app.data.repository.Result
 import com.recapmaker.app.media.FFmpegProcessor
 import com.recapmaker.app.media.VideoDownloader
 import com.recapmaker.app.media.VideoProcessService
+import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
