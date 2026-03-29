@@ -1,13 +1,17 @@
 package com.recapmaker.app.ui.editor
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.recapmaker.app.data.local.VideoHistoryDao
@@ -31,13 +35,11 @@ data class EditorState(
     val pricingTiers: List<PricingTier> = emptyList(),
     val videoUri: Uri? = null, val videoLocalPath: String? = null,
     val videoFilename: String? = null, val videoDuration: Int = 0,
-    // URL download
     val urlInput: String = "",
     val isCheckingUrl: Boolean = false,
     val videoInfo: VideoDownloader.VideoInfo? = null,
     val showResolutionPopup: Boolean = false,
     val isDownloading: Boolean = false, val downloadProgress: Float = 0f,
-    // Effects
     val flipEnabled: Boolean = false, val speedEnabled: Boolean = false,
     val pitchEnabled: Boolean = false, val noiseEnabled: Boolean = false,
     val blurEnabled: Boolean = false, val blurAreas: List<BlurArea> = emptyList(),
@@ -71,11 +73,9 @@ class EditorViewModel @Inject constructor(
     }
 
     val costText: String get() {
-        val dur = state.videoDuration
-        if (dur == 0 && state.videoLocalPath == null) return ""
+        val dur = state.videoDuration; if (dur == 0 && state.videoLocalPath == null) return ""
         val cost = getCostForDuration(dur, state.pricingTiers)
-        if (cost == -1) return "(ရှည်လွန်းသည်)"
-        if (cost == 0) return "(အခမဲ့)"
+        if (cost == -1) return "(ရှည်လွန်းသည်)"; if (cost == 0) return "(အခမဲ့)"
         val isGemini = state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)
         return if (isGemini) "(🥇 $cost Gold)" else "($cost Coins)"
     }
@@ -86,7 +86,7 @@ class EditorViewModel @Inject constructor(
         return if (q.isEmpty()) src else src.filter { it.label.lowercase().contains(q) || it.gender.name.lowercase().contains(q) }
     }
 
-    // ═══ VIDEO SOURCE — Device Picker ═══
+    // ═══ VIDEO SOURCE ═══
     fun onVideoSelected(uri: Uri, context: Context) {
         viewModelScope.launch {
             state = state.copy(videoUri = uri, error = null)
@@ -102,51 +102,29 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ═══ URL DOWNLOAD — yt-dlp (YouTube/TikTok/FB/1000+ sites) ═══
-
+    // ═══ URL DOWNLOAD — yt-dlp ═══
     fun updateUrl(v: String) { state = state.copy(urlInput = v) }
-
-    /** Step 1: Check URL → get video info + resolution list → show popup */
     fun checkUrlInfo(context: Context) {
-        val url = state.urlInput.trim()
-        if (url.isBlank()) return
+        val url = state.urlInput.trim(); if (url.isBlank()) return
         viewModelScope.launch {
             state = state.copy(isCheckingUrl = true, error = null)
             val info = VideoDownloader.getVideoInfo(url, context)
-            if (info.valid) {
-                state = state.copy(isCheckingUrl = false, videoInfo = info, showResolutionPopup = true)
-            } else {
-                state = state.copy(isCheckingUrl = false, error = info.error ?: "URL စစ်မရ")
-            }
+            if (info.valid) state = state.copy(isCheckingUrl = false, videoInfo = info, showResolutionPopup = true)
+            else state = state.copy(isCheckingUrl = false, error = info.error ?: "URL စစ်မရ")
         }
     }
-
     fun dismissResolutionPopup() { state = state.copy(showResolutionPopup = false) }
-
-    /** Step 2: User selects resolution → download → preview */
     fun downloadWithFormat(context: Context, format: VideoDownloader.VideoFormat) {
         val info = state.videoInfo ?: return
         state = state.copy(showResolutionPopup = false, isDownloading = true, downloadProgress = 0f, error = null)
         viewModelScope.launch {
-            val result = VideoDownloader.download(
-                url = info.url, context = context,
-                formatId = format.formatId,
-                isDirectUrl = info.isDirectUrl,
-            ) { progress -> state = state.copy(downloadProgress = progress) }
-
+            val result = VideoDownloader.download(info.url, context, format.formatId, info.isDirectUrl) { p -> state = state.copy(downloadProgress = p) }
             if (result.success && result.file != null) {
                 var dur = 0
                 try { val mmr = MediaMetadataRetriever(); mmr.setDataSource(result.file.absolutePath); dur = ((mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000).toInt(); mmr.release() } catch (_: Exception) {}
-                state = state.copy(
-                    isDownloading = false, videoUri = Uri.fromFile(result.file),
-                    videoLocalPath = result.file.absolutePath,
-                    videoFilename = info.title.take(50).ifBlank { result.file.name },
-                    videoDuration = if (dur > 0) dur else (info.duration),
-                    urlInput = "", videoInfo = null,
-                )
-            } else {
-                state = state.copy(isDownloading = false, error = result.error ?: "Download fail")
-            }
+                state = state.copy(isDownloading = false, videoUri = Uri.fromFile(result.file), videoLocalPath = result.file.absolutePath,
+                    videoFilename = info.title.take(50).ifBlank { result.file.name }, videoDuration = if (dur > 0) dur else info.duration, urlInput = "", videoInfo = null)
+            } else state = state.copy(isDownloading = false, error = result.error ?: "Download fail")
         }
     }
 
@@ -187,17 +165,12 @@ class EditorViewModel @Inject constructor(
                 audioFile.delete()
                 val instruction = "Listen to this audio. Transcribe all speech to English, then translate to natural spoken Burmese. Transliterate names phonetically. Output ONLY Burmese text."
                 when (val r = repo.analyzeText(text = "", instruction = instruction, audioBase64 = audioBase64)) {
-                    is Result.Success -> {
-                        val text = r.data.text ?: ""
-                        if (text.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားပြောသံ မတွေ့ပါ")
-                        else state = state.copy(aiText = text, isAnalyzing = false, processStatus = "")
-                    }
+                    is Result.Success -> { val text = r.data.text ?: ""; if (text.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားပြောသံ မတွေ့ပါ") else state = state.copy(aiText = text, isAnalyzing = false, processStatus = "") }
                     is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}")
                 }
             } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") }
         }
     }
-
     fun translateScript() {
         if (state.aiText.isBlank()) return
         viewModelScope.launch {
@@ -209,14 +182,9 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════
+    // ═══════════════════════════════════════════
     // PROCESS VIDEO — ForegroundService
-    //
-    // TTS: ALL voices go through /api/ai/tts
-    //   - Gemini voices → server uses Gemini TTS API
-    //   - Microsoft voices (ThihaNeural/NilarNeural) → server uses Edge TTS
-    //   - NO timeout — wait until done or error
-    // ═══════════════════════════════════════════════
+    // ═══════════════════════════════════════════
 
     fun startProcessing(context: Context) {
         val inputPath = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }
@@ -236,108 +204,125 @@ class EditorViewModel @Inject constructor(
                 }
             } else if (cost == -1) { state = state.copy(isProcessing = false, processStatus = "", error = "Video ရှည်လွန်းပါသည်"); return@launch }
 
-            // ── 2. TTS — ALL voices through /api/ai/tts (NO timeout) ──
+            // ── 2. TTS (NO timeout) ──
             var ttsAudioPath: String? = null
             if (state.aiText.isNotBlank()) {
-                state = state.copy(processStatus = "AI Voice ဖန်တီးနေသည်... (စောင့်ပါ)")
+                state = state.copy(processStatus = "AI Voice ဖန်တီးနေသည်...")
                 when (val r = repo.geminiTts(state.aiText, state.selectedVoice)) {
                     is Result.Success -> {
                         if (r.data.audio_data != null) {
                             try {
                                 val rawFile = File(context.cacheDir, "tts_raw_${System.currentTimeMillis()}.raw")
                                 rawFile.writeBytes(android.util.Base64.decode(r.data.audio_data, android.util.Base64.DEFAULT))
-
-                                // Detect format by file header bytes (more reliable than mime string)
+                                // Detect format by file header
                                 val headerBytes = ByteArray(4)
                                 rawFile.inputStream().use { it.read(headerBytes) }
                                 val isMP3 = (headerBytes.size >= 2 && (headerBytes[0] == 0xFF.toByte() && (headerBytes[1].toInt() and 0xE0) == 0xE0))
                                         || (headerBytes.size >= 3 && headerBytes[0] == 'I'.code.toByte() && headerBytes[1] == 'D'.code.toByte() && headerBytes[2] == '3'.code.toByte())
                                 val isWAV = headerBytes.size >= 4 && String(headerBytes) == "RIFF"
-
                                 if (isMP3) {
-                                    // Already MP3 (Edge TTS returns this) — use directly
                                     val mp3File = File(context.cacheDir, "tts_${System.currentTimeMillis()}.mp3")
-                                    rawFile.renameTo(mp3File)
-                                    ttsAudioPath = mp3File.absolutePath
+                                    rawFile.renameTo(mp3File); ttsAudioPath = mp3File.absolutePath
                                 } else if (isWAV) {
-                                    // WAV — convert to MP3/AAC
                                     state = state.copy(processStatus = "TTS WAV → AAC...")
                                     val aacFile = File(context.cacheDir, "tts_${System.currentTimeMillis()}.m4a")
-                                    val cmd = "-i ${rawFile.absolutePath} -c:a aac -b:a 128k -y ${aacFile.absolutePath}"
-                                    com.arthenica.ffmpegkit.FFmpegKit.execute(cmd)
-                                    rawFile.delete()
-                                    ttsAudioPath = if (aacFile.exists() && aacFile.length() > 0) aacFile.absolutePath else null
+                                    com.arthenica.ffmpegkit.FFmpegKit.execute("-i ${rawFile.absolutePath} -c:a aac -b:a 128k -y ${aacFile.absolutePath}")
+                                    rawFile.delete(); ttsAudioPath = if (aacFile.exists() && aacFile.length() > 0) aacFile.absolutePath else null
                                 } else {
-                                    // Raw PCM (Gemini TTS — s16le 24kHz mono)
-                                    state = state.copy(processStatus = "TTS PCM → Audio...")
-                                    val mp3Path = FFmpegProcessor.convertPcmToMp3(rawFile.absolutePath, context)
-                                    rawFile.delete()
-                                    ttsAudioPath = mp3Path
+                                    state = state.copy(processStatus = "TTS PCM → AAC...")
+                                    val aacPath = FFmpegProcessor.convertPcmToMp3(rawFile.absolutePath, context)
+                                    rawFile.delete(); ttsAudioPath = aacPath
                                 }
-                            } catch (e: Exception) {
-                                state = state.copy(processStatus = "⚠ TTS: ${e.message}")
-                                delay(1500)
-                            }
+                            } catch (e: Exception) { Log.e("Editor", "TTS decode error: ${e.message}") }
                         }
                     }
-                    is Result.Error -> {
-                        state = state.copy(processStatus = "⚠ TTS: ${r.message}")
-                        delay(2000) // Show error briefly, continue without TTS
-                    }
+                    is Result.Error -> { state = state.copy(processStatus = "⚠ TTS: ${r.message}"); delay(1500) }
                 }
             }
 
             // ── 3. Logo ──
             var logoPath: String? = null
-            state.logoUri?.let { uri ->
-                val f = File(context.cacheDir, "logo_${System.currentTimeMillis()}.png")
-                if (uri.copyToFile(context, f) && f.exists()) logoPath = f.absolutePath
-            }
+            state.logoUri?.let { uri -> val f = File(context.cacheDir, "logo_${System.currentTimeMillis()}.png"); if (uri.copyToFile(context, f) && f.exists()) logoPath = f.absolutePath }
 
-            // ── 4. Start ForegroundService ──
-            state = state.copy(processStatus = "Background processing...")
+            // ── 4. Build options ──
             val opts = FFmpegProcessor.ProcessOptions(
-                flip = state.flipEnabled, speed = state.speedEnabled,
-                pitch = state.pitchEnabled, noise = state.noiseEnabled,
+                flip = state.flipEnabled, speed = state.speedEnabled, pitch = state.pitchEnabled, noise = state.noiseEnabled,
                 blurAreas = if (state.blurEnabled) state.blurAreas else emptyList(),
-                logoPath = logoPath,
-                logoX = state.logoArea.x, logoY = state.logoArea.y,
-                logoW = state.logoArea.w.coerceAtLeast(10), logoH = state.logoArea.h.coerceAtLeast(10),
-                watermarkText = state.wmText, watermarkPosition = state.wmPosition,
-                watermarkSize = state.wmSize, watermarkColor = state.wmColor,
-                watermarkScroll = state.wmScroll, watermarkBox = state.wmBox,
-                watermarkBoxOpacity = state.wmBoxOpacity,
+                logoPath = logoPath, logoX = state.logoArea.x, logoY = state.logoArea.y, logoW = state.logoArea.w.coerceAtLeast(10), logoH = state.logoArea.h.coerceAtLeast(10),
+                watermarkText = state.wmText, watermarkPosition = state.wmPosition, watermarkSize = state.wmSize, watermarkColor = state.wmColor,
+                watermarkScroll = state.wmScroll, watermarkBox = state.wmBox, watermarkBoxOpacity = state.wmBoxOpacity,
                 ttsAudioPath = ttsAudioPath,
             )
 
+            // ── 5. Start ForegroundService ──
+            state = state.copy(processStatus = "Background process starting...")
             VideoProcessService.reset()
             VideoProcessService.pendingInputPath = inputPath
             VideoProcessService.pendingOptions = opts
 
-            val intent = Intent(context, VideoProcessService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+            try {
+                val intent = Intent(context, VideoProcessService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+            } catch (e: Exception) {
+                Log.e("Editor", "Failed to start service: ${e.message}")
+                // Fallback: process directly (no background service)
+                state = state.copy(processStatus = "Direct processing...")
+                val result = FFmpegProcessor.process(inputPath, context, opts)
+                handleProcessResult(result, cost, coinTypeUsed)
+                ttsAudioPath?.let { File(it).delete() }; logoPath?.let { File(it).delete() }
+                VideoProcessService.reset()
+                return@launch
+            }
 
-            // Poll service
-            while (VideoProcessService.isRunning) {
+            // ── 6. Wait for service to start (race condition fix) ──
+            delay(1000) // Give service time to set isRunning=true
+
+            // ── 7. Poll service status ──
+            var maxWait = 600 // 5 minutes max (600 × 500ms)
+            while (VideoProcessService.isRunning && maxWait > 0) {
                 state = state.copy(processStatus = VideoProcessService.currentStatus.ifBlank { "Processing..." })
                 delay(500)
+                maxWait--
             }
 
-            // Result
-            if (VideoProcessService.resultSuccess == true) {
+            // ── 8. Handle result ──
+            val success = VideoProcessService.resultSuccess
+            val message = VideoProcessService.resultMessage
+
+            if (success == true) {
                 historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = VideoProcessService.resultOutputPath ?: "", status = "completed", duration = state.videoDuration))
-                state = state.copy(isProcessing = false, processStatus = "", success = VideoProcessService.resultMessage)
+                state = state.copy(isProcessing = false, processStatus = "", success = message)
                 loadCoins()
-            } else {
+            } else if (success == false) {
                 if (cost > 0) { repo.refundCoins(cost, "Process failed", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
                 historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
-                state = state.copy(isProcessing = false, processStatus = "", error = VideoProcessService.resultMessage ?: "Failed")
+                state = state.copy(isProcessing = false, processStatus = "", error = message ?: "Processing failed")
+            } else {
+                // Service never responded (timed out or never started)
+                if (cost > 0) { repo.refundCoins(cost, "Service timeout", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
+                state = state.copy(isProcessing = false, processStatus = "", error = "Process timeout — service did not respond")
             }
             loadHistory()
-            ttsAudioPath?.let { File(it).delete() }
-            logoPath?.let { File(it).delete() }
+            ttsAudioPath?.let { File(it).delete() }; logoPath?.let { File(it).delete() }
             VideoProcessService.reset()
         }
+    }
+
+    /** Fallback: handle result when processing directly (no service) */
+    private suspend fun handleProcessResult(result: FFmpegProcessor.ProcessResult, cost: Int, coinTypeUsed: String) {
+        if (result.success && result.outputPath != null) {
+            val outputFile = File(result.outputPath)
+            val galleryUri = FFmpegProcessor.saveToGallery(android.app.Application(), outputFile)
+            historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = galleryUri ?: result.outputPath, status = "completed", duration = state.videoDuration))
+            outputFile.delete()
+            state = state.copy(isProcessing = false, processStatus = "", success = "✅ ပြီးပါပြီ! (${result.durationMs / 1000}s)")
+            loadCoins()
+        } else {
+            if (cost > 0) { repo.refundCoins(cost, "Process failed", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
+            historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
+            state = state.copy(isProcessing = false, processStatus = "", error = result.error ?: "Failed")
+        }
+        loadHistory()
     }
 
     // ═══ HISTORY ═══

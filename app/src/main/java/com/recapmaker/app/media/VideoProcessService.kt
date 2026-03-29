@@ -1,37 +1,35 @@
 package com.recapmaker.app.media
 
 import android.app.*
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.io.File
 
-/**
- * Foreground Service for video processing.
- * Runs FFmpeg in background — app ပိတ်ထားလည်း process ဆက်လုပ်.
- * Shows notification with progress status.
- */
 class VideoProcessService : Service() {
 
     companion object {
+        const val TAG = "VideoProcessSvc"
         const val CHANNEL_ID = "recap_process_channel"
         const val NOTIFICATION_ID = 101
         const val DONE_NOTIFICATION_ID = 102
 
-        // State shared via companion (simple approach, ViewModel observes)
-        var isRunning = false; private set
-        var currentStatus = ""; private set
-        var resultSuccess: Boolean? = null; private set
-        var resultMessage: String? = null; private set
-        var resultOutputPath: String? = null; private set
+        const val EXTRA_INPUT_PATH = "input_path"
+        const val EXTRA_OPTIONS_JSON = "options_json"
 
-        // Process params set before starting service
+        // Shared state — ViewModel polls this
+        @Volatile var isRunning = false; private set
+        @Volatile var currentStatus = ""; private set
+        @Volatile var resultSuccess: Boolean? = null; private set
+        @Volatile var resultMessage: String? = null; private set
+        @Volatile var resultOutputPath: String? = null; private set
+
+        // Process params — set BEFORE starting service
         var pendingInputPath: String? = null
         var pendingOptions: FFmpegProcessor.ProcessOptions? = null
-        var pendingContext: Context? = null
 
         fun reset() {
             isRunning = false; currentStatus = ""; resultSuccess = null
@@ -39,13 +37,17 @@ class VideoProcessService : Service() {
         }
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + job)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Start foreground IMMEDIATELY in onCreate to avoid ANR on Android 12+
+        startForeground(NOTIFICATION_ID, buildNotification("Preparing..."))
+        Log.d(TAG, "Service created, foreground started")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,52 +55,62 @@ class VideoProcessService : Service() {
         val options = pendingOptions
 
         if (inputPath == null || options == null) {
+            Log.e(TAG, "No pending input/options — stopping")
+            resultSuccess = false
+            resultMessage = "Service error: no input data"
+            isRunning = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
+        // Mark running BEFORE launching coroutine (prevents race condition)
         isRunning = true
         resultSuccess = null
-
-        // Start foreground immediately
-        val notification = buildNotification("Video ပြုပြင်နေသည်...")
-        startForeground(NOTIFICATION_ID, notification)
+        Log.d(TAG, "Starting process: $inputPath")
 
         scope.launch {
             try {
+                // Step 1: FFmpeg process
                 currentStatus = "Video ပြုပြင်နေသည်..."
                 updateNotification(currentStatus)
+                Log.d(TAG, "FFmpeg processing...")
 
                 val result = FFmpegProcessor.process(inputPath, this@VideoProcessService, options)
 
                 if (result.success && result.outputPath != null) {
+                    // Step 2: Save to gallery
                     currentStatus = "Gallery သို့ သိမ်းနေသည်..."
                     updateNotification(currentStatus)
+                    Log.d(TAG, "Saving to gallery...")
 
-                    val galleryUri = FFmpegProcessor.saveToGallery(this@VideoProcessService, File(result.outputPath))
+                    val outputFile = File(result.outputPath)
+                    val galleryUri = FFmpegProcessor.saveToGallery(this@VideoProcessService, outputFile)
 
                     resultSuccess = true
                     resultOutputPath = galleryUri ?: result.outputPath
                     resultMessage = "✅ ပြီးပါပြီ! Movies/RecapMaker/ (${result.durationMs / 1000}s)"
 
-                    // Cleanup temp
-                    File(result.outputPath).delete()
-
+                    outputFile.delete()
                     showDoneNotification("✅ Video ပြီးပါပြီ!", "Movies/RecapMaker/ ထဲ သိမ်းပြီး")
+                    Log.d(TAG, "Success! Gallery URI: $galleryUri")
                 } else {
                     resultSuccess = false
-                    resultMessage = result.error ?: "Processing failed"
-                    showDoneNotification("❌ Process Failed", resultMessage ?: "")
+                    resultMessage = result.error ?: "FFmpeg processing failed"
+                    showDoneNotification("❌ Process Failed", resultMessage?.take(100) ?: "")
+                    Log.e(TAG, "FFmpeg failed: ${result.error}")
                 }
             } catch (e: Exception) {
                 resultSuccess = false
-                resultMessage = "Error: ${e.message}"
-                showDoneNotification("❌ Error", resultMessage ?: "")
+                resultMessage = "Service error: ${e.message}"
+                showDoneNotification("❌ Error", e.message?.take(100) ?: "Unknown error")
+                Log.e(TAG, "Exception in service", e)
             } finally {
-                isRunning = false
                 currentStatus = ""
                 pendingInputPath = null
                 pendingOptions = null
+                isRunning = false
+                Log.d(TAG, "Service finishing, isRunning=false")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -108,17 +120,20 @@ class VideoProcessService : Service() {
     }
 
     override fun onDestroy() {
-        scope.cancel()
+        job.cancel()
         super.onDestroy()
+        Log.d(TAG, "Service destroyed")
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Video Processing", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Video processing progress"
-            }
             val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                val channel = NotificationChannel(CHANNEL_ID, "Video Processing", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Video processing progress"
+                }
+                nm.createNotificationChannel(channel)
+            }
         }
     }
 
@@ -129,22 +144,31 @@ class VideoProcessService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .setProgress(0, 0, true)
+            .setSilent(true)
             .build()
     }
 
     private fun updateNotification(text: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, buildNotification(text))
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.notify(NOTIFICATION_ID, buildNotification(text))
+        } catch (e: Exception) {
+            Log.w(TAG, "Notification update failed: ${e.message}")
+        }
     }
 
     private fun showDoneNotification(title: String, text: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setAutoCancel(true)
-            .build()
-        nm.notify(DONE_NOTIFICATION_ID, notification)
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setAutoCancel(true)
+                .build()
+            nm.notify(DONE_NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "Done notification failed: ${e.message}")
+        }
     }
 }
