@@ -73,7 +73,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         EffectToggle("Noise/Grain", Icons.Default.Grain, s.noiseEnabled) { vm.toggleNoise(it) }
                         EffectToggle("Blur နေရာဝှက်", Icons.Default.BlurOn, s.blurEnabled, switchColor = Rose) { vm.toggleBlur(it) }
                     }
-                    AnimatedVisibility(s.blurEnabled) { Column(Modifier.padding(top = 8.dp)) { Text("↑ Preview ပေါ်တွင် Blur box ဆွဲရွှေ့ပါ", color = Rose.copy(.7f), fontSize = 11.sp); OutlinedButton({ vm.addBlurBox() }, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.3f))) { Icon(Icons.Default.Add, null, tint = Rose, Modifier.size(14.dp)); Text(" Box (${s.blurAreas.size})", fontSize = 12.sp, color = Rose) } } }
+                    AnimatedVisibility(s.blurEnabled) { Column(Modifier.padding(top = 8.dp)) { Text("↑ Preview ပေါ်တွင် Blur box ဆွဲရွှေ့ပါ", color = Rose.copy(.7f), fontSize = 11.sp); OutlinedButton({ vm.addBlurBox() }, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.3f))) { Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp), tint = Rose); Text(" Box (${s.blurAreas.size})", fontSize = 12.sp, color = Rose) } } }
                 }
 
                 // ═══ 3. WATERMARK + ADVANCED ═══
@@ -82,7 +82,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     AnimatedVisibility(s.wmText.isNotBlank()) {
                         var expanded by remember { mutableStateOf(false) }
                         Column(Modifier.padding(top = 6.dp)) {
-                            TextButton({ expanded = !expanded }) { Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = Purple, Modifier.size(16.dp)); Text(" အသေးစိတ်", fontSize = 12.sp, color = Purple) }
+                            TextButton({ expanded = !expanded }) { Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, modifier = Modifier.size(16.dp), tint = Purple); Text(" အသေးစိတ်", fontSize = 12.sp, color = Purple) }
                             AnimatedVisibility(expanded) {
                                 Surface(color = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder)) {
                                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -108,7 +108,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         Icon(if (s.logoUri != null) Icons.Default.CheckCircle else Icons.Default.AddPhotoAlternate, null, tint = if (s.logoUri != null) Emerald else TextDim)
                         Spacer(Modifier.width(8.dp)); Text(if (s.logoUri != null) "Logo ရွေးပြီး — preview ဆွဲရွှေ့ပါ" else "Logo ရွေးရန်", color = if (s.logoUri != null) Emerald else TextDim, fontSize = 13.sp)
                     }
-                    if (s.logoUri != null) TextButton({ vm.removeLogo() }) { Icon(Icons.Default.Delete, null, tint = ErrorRed, Modifier.size(14.dp)); Text(" ဖယ်ရှား", color = ErrorRed, fontSize = 12.sp) }
+                    if (s.logoUri != null) TextButton({ vm.removeLogo() }) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(14.dp), tint = ErrorRed); Text(" ဖယ်ရှား", color = ErrorRed, fontSize = 12.sp) }
                 }
 
                 // ═══ 5. AI VOICE ═══
@@ -116,16 +116,16 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     OutlinedTextField(s.aiText, { vm.setAiText(it) }, Modifier.fillMaxWidth().heightIn(min = 80.dp), placeholder = { Text("AI Script...", fontSize = 13.sp) }, maxLines = 6, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple), shape = RoundedCornerShape(12.dp))
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton({ vm.analyzeScript(ctx) }, enabled = !s.isAnalyzing && s.videoLocalPath != null, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f)), modifier = Modifier.weight(1f)) { if (s.isAnalyzing && s.processStatus.isNotBlank()) CircularProgressIndicator(Modifier.size(14.dp), Emerald, strokeWidth = 2.dp) else Icon(Icons.Default.GraphicEq, null, tint = Emerald, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("Auto Analyze", fontSize = 11.sp, color = Emerald) }
-                        OutlinedButton({ vm.translateScript() }, enabled = !s.isAnalyzing && s.aiText.isNotBlank(), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Purple.copy(.3f)), modifier = Modifier.weight(1f)) { Icon(Icons.Default.Translate, null, tint = Purple, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("ဘာသာပြန်", fontSize = 11.sp, color = Purple) }
+                        OutlinedButton({ vm.analyzeScript(ctx) }, enabled = !s.isAnalyzing && s.videoLocalPath != null, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f)), modifier = Modifier.weight(1f)) { if (s.isAnalyzing && s.processStatus.isNotBlank()) CircularProgressIndicator(Modifier.size(14.dp), Emerald, strokeWidth = 2.dp) else Icon(Icons.Default.GraphicEq, null, modifier = Modifier.size(14.dp), tint = Emerald); Spacer(Modifier.width(4.dp)); Text("Auto Analyze", fontSize = 11.sp, color = Emerald) }
+                        OutlinedButton({ vm.translateScript() }, enabled = !s.isAnalyzing && s.aiText.isNotBlank(), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Purple.copy(.3f)), modifier = Modifier.weight(1f)) { Icon(Icons.Default.Translate, null, modifier = Modifier.size(14.dp), tint = Purple); Spacer(Modifier.width(4.dp)); Text("ဘာသာပြန်", fontSize = 11.sp, color = Purple) }
                     }
                     AnimatedVisibility(s.isAnalyzing && s.processStatus.isNotBlank()) { Text(s.processStatus, color = TextDim, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
                     Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Mic, null, tint = Purple, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Voice", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary); if (s.selectedVoice.isNotEmpty()) { Spacer(Modifier.width(6.dp)); Surface(color = Purple.copy(.15f), shape = RoundedCornerShape(10.dp)) { Text(s.selectedVoice, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Purple, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) } } }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Mic, null, modifier = Modifier.size(16.dp), tint = Purple); Spacer(Modifier.width(6.dp)); Text("Voice", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary); if (s.selectedVoice.isNotEmpty()) { Spacer(Modifier.width(6.dp)); Surface(color = Purple.copy(.15f), shape = RoundedCornerShape(10.dp)) { Text(s.selectedVoice, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Purple, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) } } }
                     Spacer(Modifier.height(6.dp))
                     VoiceTabRow(listOf("google" to "🔷 Google PREMIUM", "microsoft" to "🟢 Microsoft FREE"), s.voiceTab) { vm.switchVoiceTab(it) }
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(s.voiceSearch, { vm.setVoiceSearch(it) }, Modifier.fillMaxWidth(), placeholder = { Text("Search...", fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Search, null, tint = TextDim, Modifier.size(16.dp)) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple.copy(.3f), unfocusedBorderColor = Purple.copy(.09f), cursorColor = Purple), shape = RoundedCornerShape(11.dp))
+                    OutlinedTextField(s.voiceSearch, { vm.setVoiceSearch(it) }, Modifier.fillMaxWidth(), placeholder = { Text("Search...", fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp), tint = TextDim) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple.copy(.3f), unfocusedBorderColor = Purple.copy(.09f), cursorColor = Purple), shape = RoundedCornerShape(11.dp))
                     Spacer(Modifier.height(6.dp))
                     val voices = vm.filteredVoices
                     if (voices.isEmpty()) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { Text("Not found", color = TextDim) }
@@ -141,7 +141,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
         }
 
         // Snackbars
-        s.error?.let { m -> Surface(Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(), color = ErrorRed.copy(.9f), shape = RoundedCornerShape(12.dp)) { Row(Modifier.padding(14.dp)) { Text(m, Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f)); IconButton({ vm.clearError() }) { Icon(Icons.Default.Close, null, tint = Color.White, Modifier.size(18.dp)) } } }; LaunchedEffect(m) { kotlinx.coroutines.delay(6000); vm.clearError() } }
+        s.error?.let { m -> Surface(Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(), color = ErrorRed.copy(.9f), shape = RoundedCornerShape(12.dp)) { Row(Modifier.padding(14.dp)) { Text(m, Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f)); IconButton({ vm.clearError() }) { Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = Color.White) } } }; LaunchedEffect(m) { kotlinx.coroutines.delay(6000); vm.clearError() } }
         s.success?.let { m -> Surface(Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(), color = Emerald.copy(.9f), shape = RoundedCornerShape(12.dp)) { Text(m, DarkBg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(14.dp)) }; LaunchedEffect(m) { kotlinx.coroutines.delay(5000); vm.clearSuccess() } }
     }
 
@@ -150,13 +150,31 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
         Dialog(onDismissRequest = { vm.dismissResolutionPopup() }) {
             Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.VideoFile, null, tint = Purple, Modifier.size(28.dp)); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text(s.videoInfo!!.title.take(60), fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp, maxLines = 2); if (s.videoInfo!!.duration > 0) Text("${s.videoInfo!!.duration/60}:${"%02d".format(s.videoInfo!!.duration%60)}", color = TextDim, fontSize = 12.sp) }; IconButton({ vm.dismissResolutionPopup() }, Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, tint = TextDim, Modifier.size(18.dp)) } }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.VideoFile, null, modifier = Modifier.size(28.dp), tint = Purple)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(s.videoInfo!!.title.take(60), fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp, maxLines = 2)
+                            if (s.videoInfo!!.duration > 0) Text("${s.videoInfo!!.duration/60}:${"%02d".format(s.videoInfo!!.duration%60)}", color = TextDim, fontSize = 12.sp)
+                        }
+                        IconButton(onClick = { vm.dismissResolutionPopup() }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = TextDim) }
+                    }
                     Spacer(Modifier.height(12.dp)); Text("Resolution ရွေးပါ", color = TextDim, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                     LazyColumn(Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(s.videoInfo!!.formats) { f ->
                             Surface(onClick = { vm.downloadWithFormat(ctx, f) }, color = if (f.formatId == "best") Purple.copy(.15f) else SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, if (f.formatId == "best") Purple.copy(.3f) else CardBorder)) {
-                                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(if (f.formatId == "best") Icons.Default.AutoAwesome else Icons.Default.HighQuality, null, tint = if (f.formatId == "best") Purple else Emerald, Modifier.size(20.dp)); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(f.resolution, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontSize = 14.sp); if (f.note.isNotBlank()) Text(f.note, color = TextDim, fontSize = 11.sp) }; if (f.fileSize > 0) Text("${"%.1f".format(f.fileSize/(1024.0*1024.0))}MB", color = TextDim, fontSize = 11.sp); Spacer(Modifier.width(8.dp)); Icon(Icons.Default.Download, null, tint = TextDim, Modifier.size(16.dp)) }
+                                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(if (f.formatId == "best") Icons.Default.AutoAwesome else Icons.Default.HighQuality, null, modifier = Modifier.size(20.dp), tint = if (f.formatId == "best") Purple else Emerald)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(f.resolution, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontSize = 14.sp)
+                                        if (f.note.isNotBlank()) Text(f.note, color = TextDim, fontSize = 11.sp)
+                                    }
+                                    if (f.fileSize > 0) Text("${"%.1f".format(f.fileSize/(1024.0*1024.0))}MB", color = TextDim, fontSize = 11.sp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp), tint = TextDim)
+                                }
                             }
                         }
                     }
@@ -170,9 +188,26 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
         Dialog(onDismissRequest = { vm.toggleHistory() }) {
             Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
                 Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Text("📋 ပြုလုပ်ပြီး Video များ", fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.weight(1f)); IconButton({ vm.toggleHistory() }, Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, tint = TextDim, Modifier.size(18.dp)) } }; Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("📋 ပြုလုပ်ပြီး Video များ", fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { vm.toggleHistory() }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = TextDim) }
+                    }
+                    Spacer(Modifier.height(8.dp))
                     if (s.history.isEmpty()) Text("မှတ်တမ်းမရှိပါ", color = TextDim, modifier = Modifier.padding(20.dp).fillMaxWidth(), textAlign = TextAlign.Center)
-                    else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(s.history) { item -> Surface(color = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder)) { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(item.fileName, color = TextPrimary, fontSize = 12.sp, maxLines = 1); val sc = if (item.status == "completed") Emerald else ErrorRed; Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(sc)); Spacer(Modifier.width(6.dp)); Text(item.status, color = sc, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) } }; IconButton({ vm.deleteHistoryItem(item) }) { Icon(Icons.Default.Delete, null, tint = ErrorRed.copy(.7f), Modifier.size(18.dp)) } } } } }
+                    else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(s.history) { item ->
+                            Surface(color = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder)) {
+                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(item.fileName, color = TextPrimary, fontSize = 12.sp, maxLines = 1)
+                                        val sc = if (item.status == "completed") Emerald else ErrorRed
+                                        Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(sc)); Spacer(Modifier.width(6.dp)); Text(item.status, color = sc, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                                    }
+                                    IconButton(onClick = { vm.deleteHistoryItem(item) }) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp), tint = ErrorRed.copy(.7f)) }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
