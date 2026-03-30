@@ -32,6 +32,8 @@ import javax.inject.Inject
 data class EditorState(
     val gold: Int = 0, val silver: Int = 0, val pricingTiers: List<PricingTier> = emptyList(),
     val videoUri: Uri? = null, val videoLocalPath: String? = null, val videoFilename: String? = null, val videoDuration: Int = 0,
+    val videoWidth: Int = 0, val videoHeight: Int = 0,
+    val previewWidth: Int = 0, val previewHeight: Int = 0,
     val urlInput: String = "", val isCheckingUrl: Boolean = false, val videoInfo: VideoDownloader.VideoInfo? = null,
     val showResolutionPopup: Boolean = false, val isDownloading: Boolean = false, val downloadProgress: Float = 0f,
     val flipEnabled: Boolean = false, val speedEnabled: Boolean = false, val pitchEnabled: Boolean = false, val noiseEnabled: Boolean = false,
@@ -55,13 +57,13 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     val filteredVoices: List<VoiceInfo> get() { val s = if (state.voiceTab == "google") VoiceData.googleVoices else VoiceData.microsoftVoices; val q = state.voiceSearch.lowercase().trim(); return if (q.isEmpty()) s else s.filter { it.label.lowercase().contains(q) || it.gender.name.lowercase().contains(q) } }
 
     // ═══ VIDEO SOURCE ═══
-    fun onVideoSelected(uri: Uri, context: Context) { viewModelScope.launch { state = state.copy(videoUri = uri, error = null); try { val t = File(context.cacheDir, "input_${System.currentTimeMillis()}.mp4"); uri.copyToFile(context, t); if (!t.exists() || t.length() == 0L) { state = state.copy(error = "File ဖတ်မရ"); return@launch }; val m = MediaMetadataRetriever(); m.setDataSource(t.absolutePath); val d = (m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000; m.release(); state = state.copy(videoLocalPath = t.absolutePath, videoDuration = d.toInt(), videoFilename = uri.lastPathSegment ?: "video.mp4") } catch (e: Exception) { state = state.copy(error = "${e.message}") } } }
+    fun onVideoSelected(uri: Uri, context: Context) { viewModelScope.launch { state = state.copy(videoUri = uri, error = null); try { val t = File(context.cacheDir, "input_${System.currentTimeMillis()}.mp4"); uri.copyToFile(context, t); if (!t.exists() || t.length() == 0L) { state = state.copy(error = "File ဖတ်မရ"); return@launch }; val m = MediaMetadataRetriever(); m.setDataSource(t.absolutePath); val d = (m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000; val vw = m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0; val vh = m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0; m.release(); state = state.copy(videoLocalPath = t.absolutePath, videoDuration = d.toInt(), videoFilename = uri.lastPathSegment ?: "video.mp4", videoWidth = vw, videoHeight = vh) } catch (e: Exception) { state = state.copy(error = "${e.message}") } } }
 
     // ═══ URL DOWNLOAD ═══
     fun updateUrl(v: String) { state = state.copy(urlInput = v) }
     fun checkUrlInfo(ctx: Context) { val u = state.urlInput.trim(); if (u.isBlank()) return; viewModelScope.launch { state = state.copy(isCheckingUrl = true, error = null); val i = VideoDownloader.getVideoInfo(u, ctx); if (i.valid) state = state.copy(isCheckingUrl = false, videoInfo = i, showResolutionPopup = true) else state = state.copy(isCheckingUrl = false, error = i.error ?: "URL စစ်မရ") } }
     fun dismissResolutionPopup() { state = state.copy(showResolutionPopup = false) }
-    fun downloadWithFormat(ctx: Context, fmt: VideoDownloader.VideoFormat) { val i = state.videoInfo ?: return; state = state.copy(showResolutionPopup = false, isDownloading = true, downloadProgress = 0f); viewModelScope.launch { val r = VideoDownloader.download(i.url, ctx, fmt.formatId, i.isDirectUrl) { p -> state = state.copy(downloadProgress = p) }; if (r.success && r.file != null) { var d = 0; try { val m = MediaMetadataRetriever(); m.setDataSource(r.file.absolutePath); d = ((m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000).toInt(); m.release() } catch (_: Exception) {}; state = state.copy(isDownloading = false, videoUri = Uri.fromFile(r.file), videoLocalPath = r.file.absolutePath, videoFilename = i.title.take(50).ifBlank { r.file.name }, videoDuration = if (d > 0) d else i.duration, urlInput = "", videoInfo = null) } else state = state.copy(isDownloading = false, error = r.error) } }
+    fun downloadWithFormat(ctx: Context, fmt: VideoDownloader.VideoFormat) { val i = state.videoInfo ?: return; state = state.copy(showResolutionPopup = false, isDownloading = true, downloadProgress = 0f); viewModelScope.launch { val r = VideoDownloader.download(i.url, ctx, fmt.formatId, i.isDirectUrl) { p -> state = state.copy(downloadProgress = p) }; if (r.success && r.file != null) { var d = 0; var vw = 0; var vh = 0; try { val m = MediaMetadataRetriever(); m.setDataSource(r.file.absolutePath); d = ((m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000).toInt(); vw = m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0; vh = m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0; m.release() } catch (_: Exception) {}; state = state.copy(isDownloading = false, videoUri = Uri.fromFile(r.file), videoLocalPath = r.file.absolutePath, videoFilename = i.title.take(50).ifBlank { r.file.name }, videoDuration = if (d > 0) d else i.duration, videoWidth = vw, videoHeight = vh, urlInput = "", videoInfo = null) } else state = state.copy(isDownloading = false, error = r.error) } }
 
     // ═══ EFFECTS ═══
     fun toggleFlip(v: Boolean) { state = state.copy(flipEnabled = v) }
@@ -75,6 +77,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun onLogoSelected(u: Uri) { state = state.copy(logoUri = u) }
     fun removeLogo() { state = state.copy(logoUri = null) }
     fun updateLogoArea(a: BlurArea) { state = state.copy(logoArea = a) }
+    fun updatePreviewSize(w: Int, h: Int) { state = state.copy(previewWidth = w, previewHeight = h) }
     fun setWmText(v: String) { state = state.copy(wmText = v) }
     fun setWmPosition(v: String) { state = state.copy(wmPosition = v) }
     fun setWmSize(v: Int) { state = state.copy(wmSize = v) }
@@ -139,6 +142,8 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                 watermarkText = state.wmText, watermarkPosition = state.wmPosition, watermarkSize = state.wmSize, watermarkColor = state.wmColor,
                 watermarkScroll = state.wmScroll, watermarkBox = state.wmBox, watermarkBoxOpacity = state.wmBoxOpacity,
                 ttsAudioPath = ttsAudioPath, videoDurationSec = state.videoDuration,
+                videoWidth = state.videoWidth, videoHeight = state.videoHeight,
+                previewWidth = state.previewWidth, previewHeight = state.previewHeight,
             )
 
             VideoProcessService.reset()
