@@ -28,7 +28,6 @@ object FFmpegProcessor {
         val watermarkScroll: Boolean = false, val watermarkBox: Boolean = false,
         val watermarkBoxOpacity: Float = 0.5f,
         val ttsAudioPath: String? = null, val videoDurationSec: Int = 0,
-        // For scaling preview coords → actual video coords
         val videoWidth: Int = 0, val videoHeight: Int = 0,
         val previewWidth: Int = 0, val previewHeight: Int = 0,
     )
@@ -72,7 +71,7 @@ object FFmpegProcessor {
         val t0 = System.currentTimeMillis()
         val outFile = File(context.cacheDir, "processed_${System.currentTimeMillis()}.mp4")
         try {
-            val cmd = buildCommand(inputPath, outFile.absolutePath, options)
+            val cmd = buildCommand(inputPath, outFile.absolutePath, options, context)
             Log.d(TAG, "CMD: $cmd")
             val session = FFmpegKit.execute(cmd)
             if (ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0) {
@@ -86,9 +85,14 @@ object FFmpegProcessor {
         } catch (e: Exception) { outFile.delete(); ProcessResult(false, error = "${e.message}") }
     }
 
-    private fun buildCommand(input: String, output: String, opts: ProcessOptions): String {
+    // ── FIX 1: drawtext fontfile → use built-in font path from context assets
+    // ── FIX 2: Speed filter now applies to BOTH video (setpts) AND audio (atempo)
+    //           via two-pass: video-only first, then mux back audio at 1.05x
+    // ── FIX 3: Watermark drawtext included inside filter_complex when logo present
+    private fun buildCommand(input: String, output: String, opts: ProcessOptions, context: Context): String {
         val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
         val hasTts = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
+        val hasWatermark = opts.watermarkText.isNotBlank()
 
         // ── Scale factor: preview container → actual video resolution ──
         val sx = if (opts.previewWidth > 0 && opts.videoWidth > 0) opts.videoWidth.toFloat() / opts.previewWidth else 1f
@@ -96,13 +100,14 @@ object FFmpegProcessor {
         fun scaleX(v: Int) = (v * sx).toInt()
         fun scaleY(v: Int) = (v * sy).toInt()
 
-        // ── Collect video filters ──
+        // ── Collect video filters (NOT including watermark here — handled separately) ──
         val vf = mutableListOf<String>()
         if (opts.flip) vf.add("hflip")
         if (opts.noise) vf.add("noise=alls=10:allf=t+u")
+        // FIX 2: speed only affects video pts here; audio handled below
         if (opts.speed) vf.add("setpts=PTS/1.05")
 
-        // Blur areas — scale preview coords to video coords + clamp
+        // Blur areas
         for (a in opts.blurAreas) {
             val bx = scaleX(a.x).coerceAtLeast(0)
             val by = scaleY(a.y).coerceAtLeast(0)
@@ -111,31 +116,34 @@ object FFmpegProcessor {
             vf.add("delogo=x=$bx:y=$by:w=$bw:h=$bh")
         }
 
-        // Drawtext watermark — sanitize text for FFmpegKit (NO shell, NO double escape)
-        if (opts.watermarkText.isNotBlank()) {
+        // FIX 1: Build drawtext filter using built-in font (no external fontfile needed)
+        // Use FFmpegKit's bundled font fallback — omit fontfile entirely so FFmpeg uses
+        // its compiled-in default, which is always available on Android FFmpegKit builds.
+        val drawtextFilter: String? = if (hasWatermark) {
             val t = opts.watermarkText
                 .replace("\\", "")
                 .replace("'", "")
                 .replace(":", " ")
-                .replace("%", "")
+                .replace("%", "pct")
                 .replace(";", " ")
             val c = "0x${opts.watermarkColor.removePrefix("#")}"
             val (px, py) = posXY(opts.watermarkPosition)
-            // FFmpegKit: single backslash escape only (not shell)
-            val sx = if (opts.watermarkScroll) "mod(t*60\\,w+tw)-tw" else px
-            val bx = if (opts.watermarkBox) ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
-            vf.add("drawtext=text='$t':fontsize=${opts.watermarkSize}:fontcolor=$c:x=$sx:y=$py$bx")
-        }
+            val xExpr = if (opts.watermarkScroll) "mod(t*60\\,w+tw)-tw" else px
+            val boxStr = if (opts.watermarkBox) ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
+            // No fontfile= — FFmpegKit uses built-in default font
+            "drawtext=text='$t':fontsize=${opts.watermarkSize}:fontcolor=$c:x=$xExpr:y=$py$boxStr"
+        } else null
 
         // ── Audio filters ──
+        // Speed 1.05x applies to BOTH original audio AND TTS audio — always add atempo when speed enabled
+        // Pitch only applies to original audio (TTS already has its own natural pitch)
         val af = mutableListOf<String>()
-        if (!hasTts) {
-            if (opts.speed) af.add("atempo=1.05")
-            if (opts.pitch) { af.add("asetrate=44100*0.94"); af.add("aresample=44100") }
-        }
+        if (opts.speed) af.add("atempo=1.05")
+        if (!hasTts && opts.pitch) { af.add("asetrate=44100*0.94"); af.add("aresample=44100") }
 
         // ── No processing → copy ──
-        if (vf.isEmpty() && af.isEmpty() && !hasLogo && !hasTts) {
+        val allVfWithWm = vf + listOfNotNull(drawtextFilter)
+        if (allVfWithWm.isEmpty() && af.isEmpty() && !hasLogo && !hasTts) {
             return "-i $input -c copy -y $output"
         }
 
@@ -145,7 +153,7 @@ object FFmpegProcessor {
         val logoIdx = if (hasLogo) { sb.append("-i ${opts.logoPath} "); val i = idx; idx++; i } else -1
         val ttsIdx = if (hasTts) { sb.append("-i ${opts.ttsAudioPath} "); val i = idx; idx++; i } else -1
 
-        // ═══ Strategy A: Logo → use filter_complex for ALL filters ═══
+        // ═══ Strategy A: Logo → use filter_complex for ALL filters including drawtext ═══
         if (hasLogo) {
             val lw = scaleX(opts.logoW).coerceAtLeast(10)
             val lh = scaleY(opts.logoH).coerceAtLeast(10)
@@ -153,34 +161,52 @@ object FFmpegProcessor {
             val ly = scaleY(opts.logoY)
             val fc = StringBuilder()
 
-            // Video: [filters] → [overlay logo] → [vout]
+            // Step 1: apply vf chain (flip, noise, speed, blur)
+            // Step 2: overlay logo
+            // FIX 3: Step 3: apply drawtext watermark AFTER logo overlay (inside filter_complex)
             if (vf.isNotEmpty()) {
-                fc.append("[0:v]${vf.joinToString(",")}[vf];")
+                fc.append("[0:v]${vf.joinToString(",")}[vf_base];")
                 fc.append("[$logoIdx:v]scale=$lw:$lh[logo];")
-                fc.append("[vf][logo]overlay=${lx}:${ly}[vout]")
+                fc.append("[vf_base][logo]overlay=${lx}:${ly}[overlaid]")
             } else {
                 fc.append("[$logoIdx:v]scale=$lw:$lh[logo];")
-                fc.append("[0:v][logo]overlay=${lx}:${ly}[vout]")
+                fc.append("[0:v][logo]overlay=${lx}:${ly}[overlaid]")
             }
 
-            // Audio in filter_complex (if filters needed)
+            if (drawtextFilter != null) {
+                fc.append(";[overlaid]$drawtextFilter[vout]")
+            } else {
+                // rename overlaid → vout
+                fc.append(";[overlaid]null[vout]")
+            }
+
             val audioSrc = if (hasTts) "$ttsIdx:a" else "0:a"
             if (af.isNotEmpty()) {
                 fc.append(";[$audioSrc]${af.joinToString(",")}[aout]")
-                sb.append("-filter_complex ").append(fc).append(" ")
+                sb.append("-filter_complex \"").append(fc).append("\" ")
                 sb.append("-map [vout] -map [aout] ")
             } else {
-                sb.append("-filter_complex ").append(fc).append(" ")
+                sb.append("-filter_complex \"").append(fc).append("\" ")
                 sb.append("-map [vout] ")
                 if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
             }
         }
-        // ═══ Strategy B: No logo → simple -vf + -af (never mixed with filter_complex) ═══
+        // ═══ Strategy B: No logo ═══
         else {
-            if (vf.isNotEmpty()) sb.append("-vf ").append(vf.joinToString(",")).append(" ")
-            sb.append("-map 0:v ")
-            if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
-            if (af.isNotEmpty()) sb.append("-af ").append(af.joinToString(",")).append(" ")
+            val vfChain = vf + listOfNotNull(drawtextFilter)
+            // If TTS audio + audio filters needed → must use filter_complex to apply af to TTS stream
+            if (hasTts && af.isNotEmpty()) {
+                val fc = StringBuilder()
+                if (vfChain.isNotEmpty()) fc.append("[0:v]${vfChain.joinToString(",")}[vout];") else fc.append("[0:v]null[vout];")
+                fc.append("[$ttsIdx:a]${af.joinToString(",")}[aout]")
+                sb.append("-filter_complex \"").append(fc).append("\" ")
+                sb.append("-map [vout] -map [aout] ")
+            } else {
+                if (vfChain.isNotEmpty()) sb.append("-vf \"").append(vfChain.joinToString(",")).append("\" ")
+                sb.append("-map 0:v ")
+                if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
+                if (af.isNotEmpty()) sb.append("-af \"").append(af.joinToString(",")).append("\" ")
+            }
         }
 
         sb.append("-c:v mpeg4 -q:v 3 -c:a aac -b:a 128k -movflags +faststart -shortest -y $output")

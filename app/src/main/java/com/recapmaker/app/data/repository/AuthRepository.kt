@@ -40,5 +40,15 @@ class AuthRepository @Inject constructor(private val api: RecapApi, private val 
         if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
+    suspend fun linkEmail(email: String): Result<MessageResponse> = try {
+        val r = api.linkEmail(LinkEmailRequest(email))
+        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
+    } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
+
+    suspend fun changePassword(oldPw: String, newPw: String): Result<MessageResponse> = try {
+        val r = api.changePassword(ChangePasswordRequest(oldPw, newPw))
+        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
+    } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
+
     suspend fun logout() { tokenManager.clear() }
 }
