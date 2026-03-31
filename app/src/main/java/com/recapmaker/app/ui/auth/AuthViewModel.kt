@@ -47,15 +47,8 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
 
     fun forgotPassword(email: String) {
         if (email.isBlank()) { state = state.copy(error = "Email ဖြည့်ပါ"); return }
-        // Basic email format validation
-        if (!email.contains("@") || !email.contains(".")) {
-            state = state.copy(error = "Email format မှားနေသည်")
-            return
-        }
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
-            // FIX: was calling repo.forgotPassword(email) TWICE — once in when(), once in Error branch
-            // This caused double API call: one to send email, one that never sends (race condition)
             when (val r = repo.forgotPassword(email)) {
                 is Result.Success -> state = state.copy(isLoading = false, resetCodeSent = true)
                 is Result.Error -> state = state.copy(isLoading = false, error = r.message)
@@ -69,7 +62,6 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         if (newPw != confirmPw) { state = state.copy(error = "Password များ မတူပါ"); return }
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
-            // FIX: same double-call bug — capture result once, use it
             when (val r = repo.resetPassword(email, code, newPw)) {
                 is Result.Success -> state = state.copy(isLoading = false, passwordReset = true)
                 is Result.Error -> state = state.copy(isLoading = false, error = r.message)
@@ -77,32 +69,6 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         }
     }
 
-    fun linkEmail(email: String) {
-        if (email.isBlank()) { state = state.copy(error = "Email ဖြည့်ပါ"); return }
-        viewModelScope.launch {
-            state = state.copy(isLoading = true, error = null)
-            when (val r = repo.linkEmail(email)) {
-                is Result.Success -> state = state.copy(isLoading = false, linkEmailSuccess = true)
-                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
-            }
-        }
-    }
-
-    fun changePassword(oldPw: String, newPw: String, confirmPw: String) {
-        if (oldPw.isBlank()) { state = state.copy(error = "လက်ရှိ Password ဖြည့်ပါ"); return }
-        if (newPw.length < 4) { state = state.copy(error = "Password အနည်းဆုံး ၄ လုံး"); return }
-        if (newPw != confirmPw) { state = state.copy(error = "Password များ မတူပါ"); return }
-        viewModelScope.launch {
-            state = state.copy(isLoading = true, error = null)
-            when (val r = repo.changePassword(oldPw, newPw)) {
-                is Result.Success -> state = state.copy(isLoading = false, changePwSuccess = true)
-                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
-            }
-        }
-    }
-
-    fun clearLinkEmailSuccess() { state = state.copy(linkEmailSuccess = false) }
-    fun clearChangePwSuccess() { state = state.copy(changePwSuccess = false) }
     fun clearError() { state = state.copy(error = null) }
     fun resetState() { state = AuthUiState() }
 }
