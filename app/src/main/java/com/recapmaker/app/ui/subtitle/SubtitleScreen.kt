@@ -60,7 +60,7 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                         Button(onClick = { vm.checkUrlInfo(ctx) }, enabled = s.urlInput.isNotBlank() && !s.isDownloading && !s.isCheckingUrl,
                             shape = RoundedCornerShape(0.dp, 12.dp, 12.dp, 0.dp), modifier = Modifier.height(56.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Emerald)) {
-                            if (s.isDownloading || s.isCheckingUrl) CircularProgressIndicator(Modifier.size(18.dp), Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.Download, null, tint = DarkBg)
+                            if (s.isDownloading || s.isCheckingUrl) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.Download, null, tint = DarkBg)
                         }
                     }
                     AnimatedVisibility(s.isDownloading) {

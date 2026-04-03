@@ -23,7 +23,6 @@ jobs:
           cache: gradle
 
       # gradle-wrapper.jar is a binary that zip/git exports often omit.
-      # Try multiple URL patterns (Gradle uses both v8.x.x and REL_8.x.x tags).
       - name: Restore gradle-wrapper.jar if missing
         run: |
           JAR=gradle/wrapper/gradle-wrapper.jar
@@ -31,7 +30,6 @@ jobs:
             VER=$(grep -oP '(?<=gradle-)[0-9]+\.[0-9]+(\.[0-9]+)?(?=-bin|-all)' \
               gradle/wrapper/gradle-wrapper.properties)
             echo "Gradle version: $VER — downloading wrapper jar..."
-            # Try v-prefixed tag first, then REL_ tag
             curl -fsSL \
               "https://raw.githubusercontent.com/gradle/gradle/v${VER}/gradle/wrapper/gradle-wrapper.jar" \
               -o "$JAR" 2>/dev/null || \
@@ -58,8 +56,6 @@ jobs:
           retention-days: 7
 
       # ─── Release APK ───────────────────────────────────────────────
-      # Keystore secrets ရှိ  → signed release APK
-      # Keystore secrets မရှိ → unsigned release APK (skip မဖြစ်)
       - name: Decode Keystore (if secrets present)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}

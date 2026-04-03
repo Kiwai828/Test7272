@@ -85,7 +85,7 @@ fun PasswordField(
 fun PrimaryButton(text: String, onClick: () -> Unit, loading: Boolean = false, modifier: Modifier = Modifier, color: Color = Purple, enabled: Boolean = true) {
     Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(50.dp), enabled = !loading && enabled,
         colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = color.copy(0.4f)), shape = RoundedCornerShape(12.dp)) {
-        if (loading) CircularProgressIndicator(Modifier.size(22.dp), Color.White, strokeWidth = 2.dp)
+        if (loading) CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
         else Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }
