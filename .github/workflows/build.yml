@@ -22,10 +22,31 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      # gradle-wrapper.jar is a binary that zip/git exports often omit.
+      # Try multiple URL patterns (Gradle uses both v8.x.x and REL_8.x.x tags).
+      - name: Restore gradle-wrapper.jar if missing
+        run: |
+          JAR=gradle/wrapper/gradle-wrapper.jar
+          if [ ! -f "$JAR" ] || [ ! -s "$JAR" ]; then
+            VER=$(grep -oP '(?<=gradle-)[0-9]+\.[0-9]+(\.[0-9]+)?(?=-bin|-all)' \
+              gradle/wrapper/gradle-wrapper.properties)
+            echo "Gradle version: $VER — downloading wrapper jar..."
+            # Try v-prefixed tag first, then REL_ tag
+            curl -fsSL \
+              "https://raw.githubusercontent.com/gradle/gradle/v${VER}/gradle/wrapper/gradle-wrapper.jar" \
+              -o "$JAR" 2>/dev/null || \
+            curl -fsSL \
+              "https://raw.githubusercontent.com/gradle/gradle/REL_${VER}/gradle/wrapper/gradle-wrapper.jar" \
+              -o "$JAR"
+            echo "Result: $(ls -lh $JAR)"
+          else
+            echo "gradle-wrapper.jar present ($(du -h $JAR | cut -f1))"
+          fi
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ─── Debug APK ─────────────────────────────────────────────────────────
+      # ─── Debug APK ─────────────────────────────────────────────────
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
@@ -36,31 +57,27 @@ jobs:
           path: app/build/outputs/apk/debug/**.apk
           retention-days: 7
 
-      # ─── Release APK ───────────────────────────────────────────────────────
-      # If KEYSTORE_BASE64 secret is set → signed release APK
-      # If not set             → unsigned release APK (still built, not skipped)
-      - name: Decode Keystore (if available)
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
+      # ─── Release APK ───────────────────────────────────────────────
+      # Keystore secrets ရှိ  → signed release APK
+      # Keystore secrets မရှိ → unsigned release APK (skip မဖြစ်)
+      - name: Decode Keystore (if secrets present)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > ${{ github.workspace }}/release.keystore
-          echo "KEYSTORE_FILE=${{ github.workspace }}/release.keystore" >> $GITHUB_ENV
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > $GITHUB_WORKSPACE/release.keystore
+            echo "KEYSTORE_FILE=$GITHUB_WORKSPACE/release.keystore" >> $GITHUB_ENV
+            echo "Keystore decoded OK"
+          else
+            echo "No KEYSTORE_BASE64 secret — building unsigned release APK"
+          fi
 
-      - name: Build Release APK (signed)
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
+      - name: Build Release APK
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_FILE: ${{ env.KEYSTORE_FILE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
-
-      - name: Build Release APK (unsigned — no keystore secrets)
-        if: ${{ env.KEYSTORE_BASE64 == '' }}
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload Release APK
