@@ -7,6 +7,10 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Read keystore path at configuration time — must be non-null & non-empty to use
+val ksFilePath: String = System.getenv("KEYSTORE_FILE") ?: ""
+val hasKeystore: Boolean = ksFilePath.isNotEmpty()
+
 android {
     namespace = "com.recapmaker.app"
     compileSdk = 35
@@ -20,17 +24,16 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"https://zzzzz-mu.vercel.app\"")
     }
 
-    signingConfigs {
-        create("release") {
-            val ksFile = System.getenv("KEYSTORE_FILE")
-            if (ksFile != null) {
-                storeFile = file(ksFile)
+    // Only create the release signingConfig when a keystore is actually present.
+    // Calling file("") when KEYSTORE_FILE is empty throws IllegalArgumentException.
+    if (hasKeystore) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(ksFilePath)
                 storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
                 keyAlias = System.getenv("KEY_ALIAS") ?: ""
                 keyPassword = System.getenv("KEY_PASSWORD") ?: ""
             }
-            // If no KEYSTORE_FILE env → signing config is empty → release will be unsigned
-            // (Gradle will still produce an APK; it just won't be signed with a release key)
         }
     }
 
@@ -39,10 +42,11 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Always apply the release signingConfig.
-            // If KEYSTORE_FILE is not set the config is empty and Gradle uses its own
-            // default signing (produces an unsigned APK) — build does NOT fail/skip.
-            signingConfig = signingConfigs.getByName("release")
+            // Use release signing only when keystore is available; otherwise falls back
+            // to the default debug signing — APK is still built, not skipped.
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -93,7 +97,6 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.5.1")
 
     // FFmpeg-Kit — on-device video processing (community fork, Maven Central)
-    // Same API as com.arthenica:ffmpeg-kit, compatible with API 35 + 16KB pages
     implementation("com.moizhassan.ffmpeg:ffmpeg-kit-16kb:6.1.1")
     implementation("com.arthenica:smart-exception-java:0.2.1")
 
