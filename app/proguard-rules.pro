@@ -13,6 +13,9 @@
 # ── FFmpeg-Kit ──
 -keep class com.arthenica.ffmpegkit.** { *; }
 -keep class com.arthenica.smartexception.** { *; }
+-keep class com.moizhassan.ffmpeg.** { *; }
+-dontwarn com.arthenica.**
+-dontwarn com.moizhassan.**
 
 # ── youtubedl-android (yt-dlp) ──
 -keep class com.yausername.youtubedl_android.** { *; }

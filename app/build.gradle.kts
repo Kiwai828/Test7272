@@ -29,6 +29,8 @@ android {
                 keyAlias = System.getenv("KEY_ALIAS") ?: ""
                 keyPassword = System.getenv("KEY_PASSWORD") ?: ""
             }
+            // If no KEYSTORE_FILE env → signing config is empty → release will be unsigned
+            // (Gradle will still produce an APK; it just won't be signed with a release key)
         }
     }
 
@@ -37,10 +39,10 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            val ksFile = System.getenv("KEYSTORE_FILE")
-            if (ksFile != null) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            // Always apply the release signingConfig.
+            // If KEYSTORE_FILE is not set the config is empty and Gradle uses its own
+            // default signing (produces an unsigned APK) — build does NOT fail/skip.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

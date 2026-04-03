@@ -49,9 +49,9 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         if (email.isBlank()) { state = state.copy(error = "Email ဖြည့်ပါ"); return }
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
-            when (val r = repo.forgotPassword(email)) {
+            when (repo.forgotPassword(email)) {
                 is Result.Success -> state = state.copy(isLoading = false, resetCodeSent = true)
-                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
+                is Result.Error -> state = state.copy(isLoading = false, error = (repo.forgotPassword(email) as? Result.Error)?.message)
             }
         }
     }
@@ -62,9 +62,9 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         if (newPw != confirmPw) { state = state.copy(error = "Password များ မတူပါ"); return }
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
-            when (val r = repo.resetPassword(email, code, newPw)) {
+            when (repo.resetPassword(email, code, newPw)) {
                 is Result.Success -> state = state.copy(isLoading = false, passwordReset = true)
-                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
+                is Result.Error -> state = state.copy(isLoading = false, error = (repo.resetPassword(email, code, newPw) as? Result.Error)?.message)
             }
         }
     }
