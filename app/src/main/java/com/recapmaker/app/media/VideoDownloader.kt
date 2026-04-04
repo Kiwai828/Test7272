@@ -178,7 +178,15 @@ object VideoDownloader {
                 DownloadResult(false, error = "Download ပြီးပေမယ့် file မတွေ့ပါ")
             }
         } catch (e: Exception) {
-            DownloadResult(false, error = "Download failed: ${e.message?.take(150)}")
+            val msg = e.message ?: "Unknown error"
+            // yt-dlp version warning alone should not be a hard failure
+            // If the only "error" is the version warning, the real problem is elsewhere
+            val cleanMsg = msg
+                .lines()
+                .filterNot { it.contains("WARNING:") && it.contains("yt-dlp") && it.contains("older than") }
+                .joinToString("\n")
+                .trim()
+            DownloadResult(false, error = "Download failed: ${cleanMsg.take(200)}")
         }
     }
 
