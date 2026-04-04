@@ -97,6 +97,10 @@ object FFmpegProcessor {
     }
 
     private fun buildCommand(input: String, output: String, opts: ProcessOptions): String {
+        // Quote paths at the top — used in both early-return and main command
+        val qInput = "\"$input\""
+        val qOutput = "\"$output\""
+
         val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
         val hasTts = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
 
@@ -150,9 +154,6 @@ object FFmpegProcessor {
             return "-i $qInput -c copy -y $qOutput"
         }
 
-        // Quote paths to handle spaces in Android cache dir paths
-        val qInput = "\"$input\""
-        val qOutput = "\"$output\""
         val sb = StringBuilder()
         sb.append("-i $qInput ")
         var idx = 1
