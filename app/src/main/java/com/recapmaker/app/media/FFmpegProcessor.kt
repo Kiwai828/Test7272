@@ -88,6 +88,17 @@ object FFmpegProcessor {
         ms / 1000.0
     } catch (_: Exception) { 0.0 }
 
+    // Read original video bitrate so we can match it during re-encode (preserves quality)
+    private fun getVideoBitrateKbps(path: String): Int = try {
+        val m = MediaMetadataRetriever()
+        m.setDataSource(path)
+        val totalBps = m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0
+        m.release()
+        // Total bitrate includes audio (~128kbps); subtract to get video-only bitrate
+        val videoBps = (totalBps - 128_000).coerceAtLeast(500_000)
+        videoBps / 1000  // return in kbps
+    } catch (_: Exception) { 0 }
+
     suspend fun matchAudioToVideoDuration(audioPath: String, videoDurSec: Int, context: Context): String? =
         withContext(Dispatchers.IO) {
             if (videoDurSec <= 0) return@withContext audioPath
@@ -123,7 +134,7 @@ object FFmpegProcessor {
 
             val outFile = File(context.cacheDir, "processed_${System.currentTimeMillis()}.mp4")
             try {
-                val cmd = buildCommand(inputPath, outFile.absolutePath, options, context)
+                val cmd = buildCommand(inputPath, outFile.absolutePath, options, context, inputPath)
                 Log.d(TAG, "CMD: $cmd")
                 val session = FFmpegKit.execute(cmd)
 
@@ -155,7 +166,7 @@ object FFmpegProcessor {
     //  • Simple -vf used when: only vfParts, no logo, no hasTts
     //  • -map 0:a? always optional so audio-less videos don't crash
     // ─────────────────────────────────────────
-    private fun buildCommand(input: String, output: String, opts: ProcessOptions, context: Context): String {
+    private fun buildCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input): String {
         val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
         val hasTts  = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
 
@@ -270,7 +281,13 @@ object FFmpegProcessor {
         }
 
         val shortestFlag = if (hasTts) "-shortest " else ""
-        sb.append("-c:v mpeg4 -q:v 3 -c:a aac -b:a 128k -movflags +faststart $shortestFlag-y $output")
+        // Match original video bitrate to preserve quality
+        // MediaMetadataRetriever gives total bitrate; subtract audio to get video bitrate
+        val origKbps = getVideoBitrateKbps(originalPath)
+        val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
+        Log.d(TAG, "Original bitrate: ${origKbps}kbps → target: ${targetKbps}kbps")
+        // -q:v 1 = best mpeg4 quality (1-31, lower=better); -b:v ensures we match original
+        sb.append("-c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart $shortestFlag-y $output")
         return sb.toString()
     }
 
