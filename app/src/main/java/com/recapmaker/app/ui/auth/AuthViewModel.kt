@@ -12,9 +12,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class AuthUiState(
-    val isLoading: Boolean = false, val error: String? = null,
-    val loginSuccess: Boolean = false, val emailMissing: Boolean = false,
-    val resetCodeSent: Boolean = false, val passwordReset: Boolean = false,
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val loginSuccess: Boolean = false,
+    val emailMissing: Boolean = false,
+    val resetCodeSent: Boolean = false,
+    val passwordReset: Boolean = false,
+    // Settings dialogs
+    val linkEmailDone: Boolean = false,
+    val changePasswordDone: Boolean = false,
 )
 
 @HiltViewModel
@@ -49,9 +55,10 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         if (email.isBlank()) { state = state.copy(error = "Email ဖြည့်ပါ"); return }
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
-            when (repo.forgotPassword(email)) {
+            // BUG FIX: was calling repo.forgotPassword(email) TWICE (once for when, once for error cast)
+            when (val r = repo.forgotPassword(email)) {
                 is Result.Success -> state = state.copy(isLoading = false, resetCodeSent = true)
-                is Result.Error -> state = state.copy(isLoading = false, error = (repo.forgotPassword(email) as? Result.Error)?.message)
+                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
             }
         }
     }
@@ -62,13 +69,39 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         if (newPw != confirmPw) { state = state.copy(error = "Password များ မတူပါ"); return }
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
-            when (repo.resetPassword(email, code, newPw)) {
+            when (val r = repo.resetPassword(email, code, newPw)) {
                 is Result.Success -> state = state.copy(isLoading = false, passwordReset = true)
-                is Result.Error -> state = state.copy(isLoading = false, error = (repo.resetPassword(email, code, newPw) as? Result.Error)?.message)
+                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
+            }
+        }
+    }
+
+    fun linkEmail(email: String) {
+        if (!email.contains("@")) { state = state.copy(error = "Email မှန်ကန်စွာ ဖြည့်ပါ"); return }
+        viewModelScope.launch {
+            state = state.copy(isLoading = true, error = null)
+            when (val r = repo.linkEmail(email)) {
+                is Result.Success -> state = state.copy(isLoading = false, linkEmailDone = true)
+                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
+            }
+        }
+    }
+
+    fun changePassword(oldPw: String, newPw: String, confirmPw: String) {
+        if (oldPw.isBlank()) { state = state.copy(error = "လက်ရှိ password ဖြည့်ပါ"); return }
+        if (newPw.length < 4) { state = state.copy(error = "Password အနည်းဆုံး ၄ လုံး"); return }
+        if (newPw != confirmPw) { state = state.copy(error = "Password အသစ်များ မတူပါ"); return }
+        viewModelScope.launch {
+            state = state.copy(isLoading = true, error = null)
+            when (val r = repo.changePassword(oldPw, newPw)) {
+                is Result.Success -> state = state.copy(isLoading = false, changePasswordDone = true)
+                is Result.Error -> state = state.copy(isLoading = false, error = r.message)
             }
         }
     }
 
     fun clearError() { state = state.copy(error = null) }
     fun resetState() { state = AuthUiState() }
+    fun resetLinkEmailDone() { state = state.copy(linkEmailDone = false) }
+    fun resetChangePasswordDone() { state = state.copy(changePasswordDone = false) }
 }

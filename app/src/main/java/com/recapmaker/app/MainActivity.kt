@@ -82,10 +82,12 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("settings") {
-                        val vm: DashboardViewModel = hiltViewModel()
+                        val dashVm: DashboardViewModel = hiltViewModel()
+                        val authVm: AuthViewModel = hiltViewModel()
                         SettingsScreen(
-                            username = vm.state.username,
-                            email = vm.state.email,
+                            username = dashVm.state.username,
+                            email = dashVm.state.email,
+                            vm = authVm,
                             onBack = { nav.popBackStack() },
                             onLogout = {
                                 runBlocking { tokenManager.clear() }
