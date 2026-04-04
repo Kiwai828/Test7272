@@ -37,14 +37,14 @@ object FFmpegProcessor {
 
     suspend fun extractAudio(videoPath: String, context: Context): String? = withContext(Dispatchers.IO) {
         val out = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
-        val cmd = "-i $videoPath -vn -c:a aac -ar 16000 -ac 1 -b:a 64k -y ${out.absolutePath}"
+        val cmd = "-i \"$videoPath\" -vn -c:a aac -ar 16000 -ac 1 -b:a 64k -y \"${out.absolutePath}\""
         val s = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(s.returnCode) && out.exists() && out.length() > 0) out.absolutePath else { out.delete(); null }
     }
 
     suspend fun convertPcmToAac(pcmPath: String, context: Context): String? = withContext(Dispatchers.IO) {
         val out = File(context.cacheDir, "tts_aac_${System.currentTimeMillis()}.m4a")
-        val cmd = "-f s16le -ar 24000 -ac 1 -i $pcmPath -c:a aac -b:a 128k -y ${out.absolutePath}"
+        val cmd = "-f s16le -ar 24000 -ac 1 -i \"$pcmPath\" -c:a aac -b:a 128k -y \"${out.absolutePath}\""
         val s = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(s.returnCode) && out.exists() && out.length() > 0) out.absolutePath else { out.delete(); null }
     }
@@ -63,13 +63,18 @@ object FFmpegProcessor {
         if (ratio in 0.95..1.05) return@withContext audioPath
         val tempo = ratio.coerceIn(0.5, 3.0)
         val out = File(context.cacheDir, "tts_matched_${System.currentTimeMillis()}.m4a")
-        val cmd = "-i $audioPath -af atempo=${"%.2f".format(tempo)} -c:a aac -b:a 128k -y ${out.absolutePath}"
+        val cmd = "-i \"$audioPath\" -af atempo=${"%.2f".format(tempo)} -c:a aac -b:a 128k -y \"${out.absolutePath}\""
         val s = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(s.returnCode) && out.exists() && out.length() > 0) out.absolutePath else audioPath
     }
 
     suspend fun process(inputPath: String, context: Context, options: ProcessOptions): ProcessResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
+        // Validate input file exists and is non-empty
+        val inputFile = File(inputPath)
+        if (!inputFile.exists() || inputFile.length() == 0L) {
+            return@withContext ProcessResult(false, error = "Input video file not found or empty")
+        }
         val outFile = File(context.cacheDir, "processed_${System.currentTimeMillis()}.mp4")
         try {
             val cmd = buildCommand(inputPath, outFile.absolutePath, options)
@@ -79,9 +84,14 @@ object FFmpegProcessor {
                 ProcessResult(true, outFile.absolutePath, durationMs = System.currentTimeMillis() - t0)
             } else {
                 val logs = session.allLogsAsString ?: "Unknown"
-                Log.e(TAG, "FAIL:\n${logs.takeLast(500)}")
+                Log.e(TAG, "FAIL:\n${logs.takeLast(1000)}")
                 outFile.delete()
-                ProcessResult(false, error = logs.lines().takeLast(3).joinToString("\n"))
+                // Return last meaningful error lines (skip verbose ffmpeg output)
+                val errorLines = logs.lines()
+                    .filter { it.contains("Error") || it.contains("Invalid") || it.contains("Conversion") || it.contains("matches no streams") }
+                    .takeLast(3)
+                    .ifEmpty { logs.lines().takeLast(3) }
+                ProcessResult(false, error = errorLines.joinToString("\n"))
             }
         } catch (e: Exception) { outFile.delete(); ProcessResult(false, error = "${e.message}") }
     }
@@ -137,14 +147,17 @@ object FFmpegProcessor {
 
         // ── No processing → copy ──
         if (vf.isEmpty() && af.isEmpty() && !hasLogo && !hasTts) {
-            return "-i $input -c copy -y $output"
+            return "-i $qInput -c copy -y $qOutput"
         }
 
+        // Quote paths to handle spaces in Android cache dir paths
+        val qInput = "\"$input\""
+        val qOutput = "\"$output\""
         val sb = StringBuilder()
-        sb.append("-i $input ")
+        sb.append("-i $qInput ")
         var idx = 1
-        val logoIdx = if (hasLogo) { sb.append("-i ${opts.logoPath} "); val i = idx; idx++; i } else -1
-        val ttsIdx = if (hasTts) { sb.append("-i ${opts.ttsAudioPath} "); val i = idx; idx++; i } else -1
+        val logoIdx = if (hasLogo) { sb.append("-i \"${opts.logoPath}\" "); val i = idx; idx++; i } else -1
+        val ttsIdx = if (hasTts) { sb.append("-i \"${opts.ttsAudioPath}\" "); val i = idx; idx++; i } else -1
 
         // ═══ Strategy A: Logo → use filter_complex for ALL filters ═══
         if (hasLogo) {
@@ -176,15 +189,23 @@ object FFmpegProcessor {
                 if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
             }
         }
-        // ═══ Strategy B: No logo → simple -vf + -af (never mixed with filter_complex) ═══
+        // ═══ Strategy B: No logo → simple -vf / -af ═══
         else {
-            if (vf.isNotEmpty()) sb.append("-vf ").append(vf.joinToString(",")).append(" ")
-            sb.append("-map 0:v ")
+            if (vf.isNotEmpty()) {
+                // -vf present: FFmpeg auto-maps filtered video output, do NOT add -map 0:v
+                sb.append("-vf ").append(vf.joinToString(",")).append(" ")
+            } else {
+                sb.append("-map 0:v ")
+            }
+            // Audio mapping — always use -map 0:a? (optional) so audio-less videos don't crash
             if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
             if (af.isNotEmpty()) sb.append("-af ").append(af.joinToString(",")).append(" ")
         }
 
-        sb.append("-c:v mpeg4 -q:v 3 -c:a aac -b:a 128k -movflags +faststart -shortest -y $output")
+        // -c:a aac is safe even when -map 0:a? resolves to nothing: FFmpeg simply skips it
+        // -shortest only when TTS audio is present (prevents video cutting short otherwise)
+        val shortestFlag = if (hasTts) "-shortest " else ""
+        sb.append("-c:v mpeg4 -q:v 3 -c:a aac -b:a 128k -movflags +faststart ${shortestFlag}-y $qOutput")
         return sb.toString()
     }
 
