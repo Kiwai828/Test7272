@@ -70,7 +70,6 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         EffectToggle("Video ကိုလှန်မည်", Icons.Default.SwapHoriz, s.flipEnabled) { vm.toggleFlip(it) }
                         EffectToggle("Speed 1.05x", Icons.Default.Speed, s.speedEnabled) { vm.toggleSpeed(it) }
                         EffectToggle("အသံပြောင်းမည်", Icons.Default.MusicNote, s.pitchEnabled) { vm.togglePitch(it) }
-                        EffectToggle("Noise/Grain", Icons.Default.Grain, s.noiseEnabled) { vm.toggleNoise(it) }
                         EffectToggle("Blur နေရာဝှက်", Icons.Default.BlurOn, s.blurEnabled, switchColor = Rose) { vm.toggleBlur(it) }
                     }
                     AnimatedVisibility(s.blurEnabled) { Column(Modifier.padding(top = 8.dp)) { Text("↑ Preview ပေါ်တွင် Blur box ဆွဲရွှေ့ပါ", color = Rose.copy(.7f), fontSize = 11.sp); OutlinedButton({ vm.addBlurBox() }, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.3f))) { Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp), tint = Rose); Text(" Box (${s.blurAreas.size})", fontSize = 12.sp, color = Rose) } } }

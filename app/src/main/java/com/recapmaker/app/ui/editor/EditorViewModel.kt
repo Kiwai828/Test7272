@@ -248,7 +248,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                     val isWAV = String(headerBytes) == "RIFF"
                     when {
                         isMP3 -> { val f = File(context.cacheDir, "tts_${System.currentTimeMillis()}.mp3"); rawFile.renameTo(f); f.absolutePath }
-                        isWAV -> { val o = File(context.cacheDir, "tts_${System.currentTimeMillis()}.m4a"); com.arthenica.ffmpegkit.FFmpegKit.execute("-i \"${rawFile.absolutePath}\" -c:a aac -b:a 128k -y \"${o.absolutePath}\""); rawFile.delete(); if (o.exists() && o.length() > 0) o.absolutePath else null }
+                        isWAV -> { val o = File(context.cacheDir, "tts_${System.currentTimeMillis()}.m4a"); com.arthenica.ffmpegkit.FFmpegKit.execute("-i ${rawFile.absolutePath} -c:a aac -b:a 128k -y ${o.absolutePath}"); rawFile.delete(); if (o.exists() && o.length() > 0) o.absolutePath else null }
                         else -> { val o = FFmpegProcessor.convertPcmToAac(rawFile.absolutePath, context); rawFile.delete(); o }
                     }
                 } catch (e: Exception) { Log.e("TTS", "Decode: ${e.message}"); null }
@@ -282,7 +282,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
         val listFile = File(context.cacheDir, "concat_${System.currentTimeMillis()}.txt")
         FileOutputStream(listFile).use { fos -> files.forEach { fos.write("file '$it'\n".toByteArray()) } }
         val out = File(context.cacheDir, "tts_full_${System.currentTimeMillis()}.m4a")
-        val cmd = "-f concat -safe 0 -i \"${listFile.absolutePath}\" -c:a aac -b:a 128k -y \"${out.absolutePath}\""
+        val cmd = "-f concat -safe 0 -i ${listFile.absolutePath} -c:a aac -b:a 128k -y ${out.absolutePath}"
         val session = com.arthenica.ffmpegkit.FFmpegKit.execute(cmd)
         listFile.delete()
         return if (ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0) out.absolutePath else { out.delete(); null }

@@ -37,14 +37,14 @@ object FFmpegProcessor {
 
     suspend fun extractAudio(videoPath: String, context: Context): String? = withContext(Dispatchers.IO) {
         val out = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
-        val cmd = "-i \"$videoPath\" -vn -c:a aac -ar 16000 -ac 1 -b:a 64k -y \"${out.absolutePath}\""
+        val cmd = "-i $videoPath -vn -c:a aac -ar 16000 -ac 1 -b:a 64k -y ${out.absolutePath}"
         val s = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(s.returnCode) && out.exists() && out.length() > 0) out.absolutePath else { out.delete(); null }
     }
 
     suspend fun convertPcmToAac(pcmPath: String, context: Context): String? = withContext(Dispatchers.IO) {
         val out = File(context.cacheDir, "tts_aac_${System.currentTimeMillis()}.m4a")
-        val cmd = "-f s16le -ar 24000 -ac 1 -i \"$pcmPath\" -c:a aac -b:a 128k -y \"${out.absolutePath}\""
+        val cmd = "-f s16le -ar 24000 -ac 1 -i $pcmPath -c:a aac -b:a 128k -y ${out.absolutePath}"
         val s = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(s.returnCode) && out.exists() && out.length() > 0) out.absolutePath else { out.delete(); null }
     }
@@ -63,7 +63,7 @@ object FFmpegProcessor {
         if (ratio in 0.95..1.05) return@withContext audioPath
         val tempo = ratio.coerceIn(0.5, 3.0)
         val out = File(context.cacheDir, "tts_matched_${System.currentTimeMillis()}.m4a")
-        val cmd = "-i \"$audioPath\" -af atempo=${"%.2f".format(tempo)} -c:a aac -b:a 128k -y \"${out.absolutePath}\""
+        val cmd = "-i $audioPath -af atempo=${"%.2f".format(tempo)} -c:a aac -b:a 128k -y ${out.absolutePath}"
         val s = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(s.returnCode) && out.exists() && out.length() > 0) out.absolutePath else audioPath
     }
@@ -77,136 +77,154 @@ object FFmpegProcessor {
         }
         val outFile = File(context.cacheDir, "processed_${System.currentTimeMillis()}.mp4")
         try {
+            // Try h264_mediacodec (hardware) first — better quality, no x264 needed
             val cmd = buildCommand(inputPath, outFile.absolutePath, options)
             Log.d(TAG, "CMD: $cmd")
             val session = FFmpegKit.execute(cmd)
             if (ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0) {
-                ProcessResult(true, outFile.absolutePath, durationMs = System.currentTimeMillis() - t0)
-            } else {
-                val logs = session.allLogsAsString ?: "Unknown"
-                Log.e(TAG, "FAIL:\n${logs.takeLast(1000)}")
-                outFile.delete()
-                // Return last meaningful error lines (skip verbose ffmpeg output)
-                val errorLines = logs.lines()
-                    .filter { it.contains("Error") || it.contains("Invalid") || it.contains("Conversion") || it.contains("matches no streams") }
-                    .takeLast(3)
-                    .ifEmpty { logs.lines().takeLast(3) }
-                ProcessResult(false, error = errorLines.joinToString("\n"))
+                return@withContext ProcessResult(true, outFile.absolutePath, durationMs = System.currentTimeMillis() - t0)
             }
+
+            // h264_mediacodec failed (some devices don't support it) → fallback to mpeg4
+            val logs1 = session.allLogsAsString ?: ""
+            if (logs1.contains("mediacodec") || logs1.contains("h264_mediacodec") || logs1.contains("Encoder") || outFile.length() == 0L) {
+                outFile.delete()
+                Log.w(TAG, "h264_mediacodec failed, fallback to mpeg4")
+                val fallbackCmd = buildCommand(inputPath, outFile.absolutePath, options).replace(
+                    "-c:v h264_mediacodec -b:v 4M", "-c:v mpeg4 -q:v 3"
+                )
+                Log.d(TAG, "FALLBACK CMD: $fallbackCmd")
+                val fallbackSession = FFmpegKit.execute(fallbackCmd)
+                if (ReturnCode.isSuccess(fallbackSession.returnCode) && outFile.exists() && outFile.length() > 0) {
+                    return@withContext ProcessResult(true, outFile.absolutePath, durationMs = System.currentTimeMillis() - t0)
+                }
+                val logs2 = fallbackSession.allLogsAsString ?: "Unknown"
+                Log.e(TAG, "FALLBACK FAIL:\n${logs2.takeLast(1000)}")
+                outFile.delete()
+                val errorLines = logs2.lines()
+                    .filter { it.contains("Error") || it.contains("Invalid") || it.contains("Conversion") || it.contains("matches no streams") }
+                    .takeLast(3).ifEmpty { logs2.lines().takeLast(3) }
+                return@withContext ProcessResult(false, error = errorLines.joinToString("\n"))
+            }
+
+            val logs = logs1
+            Log.e(TAG, "FAIL:\n${logs.takeLast(1000)}")
+            outFile.delete()
+            val errorLines = logs.lines()
+                .filter { it.contains("Error") || it.contains("Invalid") || it.contains("Conversion") || it.contains("matches no streams") }
+                .takeLast(3).ifEmpty { logs.lines().takeLast(3) }
+            ProcessResult(false, error = errorLines.joinToString("\n"))
         } catch (e: Exception) { outFile.delete(); ProcessResult(false, error = "${e.message}") }
     }
 
     private fun buildCommand(input: String, output: String, opts: ProcessOptions): String {
-        // Quote paths at the top — used in both early-return and main command
-        val qInput = "\"$input\""
-        val qOutput = "\"$output\""
+        // FFmpegKit passes args directly (no shell) — raw paths work fine
+        // Android cache/files paths have no spaces so no quoting needed
+        val qInput  = input
+        val qOutput = output
 
         val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
-        val hasTts = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
+        val hasTts  = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
 
-        // ── Scale factor: preview container → actual video resolution ──
-        val sx = if (opts.previewWidth > 0 && opts.videoWidth > 0) opts.videoWidth.toFloat() / opts.previewWidth else 1f
-        val sy = if (opts.previewHeight > 0 && opts.videoHeight > 0) opts.videoHeight.toFloat() / opts.previewHeight else 1f
-        fun scaleX(v: Int) = (v * sx).toInt()
-        fun scaleY(v: Int) = (v * sy).toInt()
+        // Scale factors: preview coords → actual video coords
+        val scX = if (opts.previewWidth  > 0 && opts.videoWidth  > 0) opts.videoWidth.toFloat()  / opts.previewWidth  else 1f
+        val scY = if (opts.previewHeight > 0 && opts.videoHeight > 0) opts.videoHeight.toFloat() / opts.previewHeight else 1f
+        fun scaleX(v: Int) = (v * scX).toInt()
+        fun scaleY(v: Int) = (v * scY).toInt()
 
-        // ── Collect video filters ──
-        val vf = mutableListOf<String>()
-        if (opts.flip) vf.add("hflip")
-        if (opts.noise) vf.add("noise=alls=10:allf=t+u")
-        if (opts.speed) vf.add("setpts=PTS/1.05")
+        // ── Video filters ──
+        val vfParts = mutableListOf<String>()
+        if (opts.flip)  vfParts.add("hflip")
+        if (opts.speed) vfParts.add("setpts=PTS/1.05")
+        // noise filter excluded — not in ffmpeg-kit-16kb LGPL build, causes native crash
 
-        // Blur areas — scale preview coords to video coords + clamp
         for (a in opts.blurAreas) {
             val bx = scaleX(a.x).coerceAtLeast(0)
             val by = scaleY(a.y).coerceAtLeast(0)
-            val bw = scaleX(a.w).coerceIn(2, 3840)
-            val bh = scaleY(a.h).coerceIn(2, 2160)
-            vf.add("delogo=x=$bx:y=$by:w=$bw:h=$bh")
+            val bw = scaleX(a.w).coerceIn(4, 3840)
+            val bh = scaleY(a.h).coerceIn(4, 2160)
+            vfParts.add("delogo=x=$bx:y=$by:w=$bw:h=$bh")
         }
 
-        // Drawtext watermark — sanitize text for FFmpegKit (NO shell, NO double escape)
         if (opts.watermarkText.isNotBlank()) {
+            // Sanitize: remove chars that break FFmpeg filter syntax
             val wmText = opts.watermarkText
-                .replace("\\", "")
-                .replace("'", "")
-                .replace(":", " ")
-                .replace("%", "")
-                .replace(";", " ")
+                .replace("\\", "").replace("'", "").replace(":", " ")
+                .replace("%", "").replace(";", "").replace(",", " ")
             val wmColor = "0x${opts.watermarkColor.removePrefix("#")}"
             val (px, py) = posXY(opts.watermarkPosition)
-            // FFmpegKit: single backslash escape only (not shell)
-            // NOTE: must NOT reuse variable name `sx` — that's the scale factor above
             val wmX = if (opts.watermarkScroll) "mod(t*60\\,w+text_w)-text_w" else px
-            val wmBox = if (opts.watermarkBox) ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
-            vf.add("drawtext=text='$wmText':fontsize=${opts.watermarkSize}:fontcolor=$wmColor:x=$wmX:y=$py$wmBox")
+            val wmBoxStr = if (opts.watermarkBox)
+                ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
+            vfParts.add("drawtext=text=\'$wmText\':fontsize=${opts.watermarkSize}:fontcolor=$wmColor:x=$wmX:y=$py$wmBoxStr")
         }
 
         // ── Audio filters ──
-        val af = mutableListOf<String>()
+        val afParts = mutableListOf<String>()
         if (!hasTts) {
-            if (opts.speed) af.add("atempo=1.05")
-            if (opts.pitch) { af.add("asetrate=44100*0.94"); af.add("aresample=44100") }
+            if (opts.speed) afParts.add("atempo=1.05")
+            if (opts.pitch) { afParts.add("asetrate=44100*0.94"); afParts.add("aresample=44100") }
         }
 
-        // ── No processing → copy ──
-        if (vf.isEmpty() && af.isEmpty() && !hasLogo && !hasTts) {
+        // ── Nothing to do → stream copy ──
+        if (vfParts.isEmpty() && afParts.isEmpty() && !hasLogo && !hasTts) {
             return "-i $qInput -c copy -y $qOutput"
         }
 
+        // ── Build input list ──
         val sb = StringBuilder()
         sb.append("-i $qInput ")
         var idx = 1
-        val logoIdx = if (hasLogo) { sb.append("-i \"${opts.logoPath}\" "); val i = idx; idx++; i } else -1
-        val ttsIdx = if (hasTts) { sb.append("-i \"${opts.ttsAudioPath}\" "); val i = idx; idx++; i } else -1
+        val logoIdx = if (hasLogo) { sb.append("-i ${opts.logoPath} "); val i = idx; idx++; i } else -1
+        val ttsIdx  = if (hasTts)  { sb.append("-i ${opts.ttsAudioPath} "); val i = idx; idx++; i } else -1
 
-        // ═══ Strategy A: Logo → use filter_complex for ALL filters ═══
+        // ── Always use filter_complex ──
+        // Mixing -vf with -map in FFmpegKit causes "matches no streams" / crash.
+        // filter_complex works correctly for all feature combinations.
+        val fc = StringBuilder()
+
+        // Video chain
         if (hasLogo) {
             val lw = scaleX(opts.logoW).coerceAtLeast(10)
             val lh = scaleY(opts.logoH).coerceAtLeast(10)
             val lx = scaleX(opts.logoX)
             val ly = scaleY(opts.logoY)
-            val fc = StringBuilder()
-
-            // Video: [filters] → [overlay logo] → [vout]
-            if (vf.isNotEmpty()) {
-                fc.append("[0:v]${vf.joinToString(",")}[vf];")
+            if (vfParts.isNotEmpty()) {
+                fc.append("[0:v]${vfParts.joinToString(",")}[vftmp];")
                 fc.append("[$logoIdx:v]scale=$lw:$lh[logo];")
-                fc.append("[vf][logo]overlay=${lx}:${ly}[vout]")
+                fc.append("[vftmp][logo]overlay=$lx:$ly[vout]")
             } else {
                 fc.append("[$logoIdx:v]scale=$lw:$lh[logo];")
-                fc.append("[0:v][logo]overlay=${lx}:${ly}[vout]")
+                fc.append("[0:v][logo]overlay=$lx:$ly[vout]")
             }
-
-            // Audio in filter_complex (if filters needed)
-            val audioSrc = if (hasTts) "$ttsIdx:a" else "0:a"
-            if (af.isNotEmpty()) {
-                fc.append(";[$audioSrc]${af.joinToString(",")}[aout]")
-                sb.append("-filter_complex ").append(fc).append(" ")
-                sb.append("-map [vout] -map [aout] ")
+        } else {
+            if (vfParts.isNotEmpty()) {
+                fc.append("[0:v]${vfParts.joinToString(",")}[vout]")
             } else {
-                sb.append("-filter_complex ").append(fc).append(" ")
-                sb.append("-map [vout] ")
-                if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
+                fc.append("[0:v]copy[vout]")
             }
         }
-        // ═══ Strategy B: No logo → simple -vf / -af ═══
-        else {
-            if (vf.isNotEmpty()) {
-                // -vf present: FFmpeg auto-maps filtered video output, do NOT add -map 0:v
-                sb.append("-vf ").append(vf.joinToString(",")).append(" ")
-            } else {
-                sb.append("-map 0:v ")
-            }
-            // Audio mapping — always use -map 0:a? (optional) so audio-less videos don't crash
+
+        // Audio chain
+        val audioSrcLabel = if (hasTts) "$ttsIdx:a" else "0:a"
+        val hasAudioFilter = afParts.isNotEmpty()
+        if (hasAudioFilter) {
+            fc.append(";[$audioSrcLabel]${afParts.joinToString(",")}[aout]")
+        }
+
+        sb.append("-filter_complex ").append(fc).append(" ")
+        sb.append("-map [vout] ")
+        if (hasAudioFilter) {
+            sb.append("-map [aout] ")
+        } else {
+            // Direct audio map — 0:a? is optional, won't fail on audio-less video
             if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
-            if (af.isNotEmpty()) sb.append("-af ").append(af.joinToString(",")).append(" ")
         }
 
-        // -c:a aac is safe even when -map 0:a? resolves to nothing: FFmpeg simply skips it
-        // -shortest only when TTS audio is present (prevents video cutting short otherwise)
         val shortestFlag = if (hasTts) "-shortest " else ""
-        sb.append("-c:v mpeg4 -q:v 3 -c:a aac -b:a 128k -movflags +faststart ${shortestFlag}-y $qOutput")
+        // h264_mediacodec = Android hardware H.264 encoder (no x264 needed, better quality/speed)
+        // mpeg4 fallback kept in process() if mediacodec unavailable on device
+        sb.append("-c:v h264_mediacodec -b:v 4M -c:a aac -b:a 128k -movflags +faststart $shortestFlag-y $qOutput")
         return sb.toString()
     }
 
