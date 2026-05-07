@@ -55,7 +55,6 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         if (email.isBlank()) { state = state.copy(error = "Email ဖြည့်ပါ"); return }
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
-            // BUG FIX: was calling repo.forgotPassword(email) TWICE (once for when, once for error cast)
             when (val r = repo.forgotPassword(email)) {
                 is Result.Success -> state = state.copy(isLoading = false, resetCodeSent = true)
                 is Result.Error -> state = state.copy(isLoading = false, error = r.message)
