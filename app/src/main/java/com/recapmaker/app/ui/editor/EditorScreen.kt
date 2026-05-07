@@ -1,6 +1,5 @@
 package com.recapmaker.app.ui.editor
 
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
