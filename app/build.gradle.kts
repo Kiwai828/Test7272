@@ -113,4 +113,6 @@ dependencies {
     implementation("io.github.junkfood02.youtubedl-android:library:$ytdlAndroid")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$ytdlAndroid")
     implementation("io.github.junkfood02.youtubedl-android:aria2c:$ytdlAndroid")
+
+    testImplementation("junit:junit:4.13.2")
 }
