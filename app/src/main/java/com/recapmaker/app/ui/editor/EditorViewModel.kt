@@ -23,8 +23,10 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -238,8 +240,8 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     /** Generate TTS for a single chunk of text */
     private suspend fun generateSingleTtsChunk(context: Context, text: String, voice: String): String? {
         return when (val r = repo.geminiTts(text, voice)) {
-            is Result.Success -> {
-                if (r.data.audio_data == null) return null
+            is Result.Success -> withContext(Dispatchers.IO) {
+                if (r.data.audio_data == null) return@withContext null
                 try {
                     val rawFile = File(context.cacheDir, "tts_raw_${System.currentTimeMillis()}.raw")
                     rawFile.writeBytes(android.util.Base64.decode(r.data.audio_data, android.util.Base64.DEFAULT))
