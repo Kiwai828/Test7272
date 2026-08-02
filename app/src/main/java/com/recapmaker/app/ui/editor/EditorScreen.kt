@@ -28,6 +28,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.recapmaker.app.data.model.AspectRatio
+import com.recapmaker.app.data.model.AudioEffect
+import com.recapmaker.app.data.model.ResolutionOption
+import com.recapmaker.app.data.model.ResolutionPresets
+import com.recapmaker.app.data.model.SpeedPresets
+import com.recapmaker.app.data.model.VideoFilter
 import com.recapmaker.app.ui.common.*
 
 @Composable
@@ -35,6 +41,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     val s = vm.state; val ctx = LocalContext.current
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onLogoSelected(it) } }
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.setAudioReplace(it) } }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(DarkBg)) {
@@ -75,7 +82,105 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     AnimatedVisibility(s.blurEnabled) { Column(Modifier.padding(top = 8.dp)) { Text("↑ Preview ပေါ်တွင် Blur box ဆွဲရွှေ့ပါ", color = Rose.copy(.7f), fontSize = 11.sp); OutlinedButton({ vm.addBlurBox() }, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.3f))) { Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp), tint = Rose); Text(" Box (${s.blurAreas.size})", fontSize = 12.sp, color = Rose) } } }
                 }
 
-                // ═══ 3. WATERMARK + ADVANCED ═══
+                // ═══ 3. TRIM ═══
+                SectionCard("၃. ကြာခဏ်လက်ထားရန်", Icons.Default.ContentCut, Purple) {
+                    if (s.videoDuration > 0) {
+                        Text("Duration: ${s.videoDuration / 60}:${"%02d".format(s.videoDuration % 60)}", color = TextDim, fontSize = 12.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Start: ${s.trimStartSec}s → End: ${if (s.trimEndSec > 0) s.trimEndSec else s.videoDuration}s", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Start point", color = TextDim, fontSize = 11.sp)
+                        Slider(value = s.trimStartSec.toFloat(), onValueChange = { v -> vm.setTrim(v.toInt(), if (s.trimEndSec > 0) s.trimEndSec else s.videoDuration) }, valueRange = 0f..s.videoDuration.toFloat(), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                        Text("End point", color = TextDim, fontSize = 11.sp)
+                        Slider(value = (if (s.trimEndSec > 0) s.trimEndSec else s.videoDuration).toFloat(), onValueChange = { v -> vm.setTrim(s.trimStartSec, v.toInt().coerceAtLeast(s.videoDuration / 2)) }, valueRange = (s.videoDuration / 2f)..s.videoDuration.toFloat(), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                    }
+                }
+
+                // ═══ 4. RESOLUTION & SPEED ═══
+                SectionCard("၄. Resolution & Speed", Icons.Default.SmartResize, Purple) {
+                    Text("Resolution", color = TextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().heightIn(max = 100.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(listOf<ResolutionOption?>(null) + ResolutionPresets.all) { res ->
+                            val label = res?.label ?: "Original"
+                            val sel = res == s.selectedResolution
+                            OutlinedButton(onClick = { vm.setResolution(res) }, border = BorderStroke(1.dp, if (sel) Purple else CardBorder), shape = RoundedCornerShape(8.dp), modifier = Modifier.height(48.dp)) { Text(label, fontSize = 11.sp, color = if (sel) Color.White else TextPrimary) }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Playback Speed", color = TextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.fillMaxWidth().heightIn(max = 80.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(SpeedPresets) { sp ->
+                            val sel = sp.speed == s.selectedSpeed
+                            OutlinedButton(onClick = { vm.setSpeed(sp.speed) }, border = BorderStroke(1.dp, if (sel) Purple else CardBorder), shape = RoundedCornerShape(8.dp), modifier = Modifier.height(44.dp), enabled = !sp.isPremium) { Text(sp.label, fontSize = 11.sp, color = if (sel) Color.White else if (sp.isPremium) WarningYellow else TextPrimary) }
+                        }
+                    }
+                }
+
+                // ═══ 5. VIDEO FILTERS ═══
+                SectionCard("၅. Video Filter", Icons.Default.FilterAlt, Purple) {
+                    val filters = VideoFilter.entries
+                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().heightIn(max = 120.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(filters) { f ->
+                            val sel = f == s.selectedFilter
+                            Surface(onClick = { vm.setFilter(f) }, color = if (sel) Purple.copy(0.1f) else SurfaceDark, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, if (sel) Purple.copy(0.4f) else CardBorder)) {
+                                Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(if (sel) Purple else CardBorder))
+                                    Text(f.label, fontSize = 11.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, color = if (sel) Color.White else TextPrimary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ═══ 6. ASPECT RATIO ═══
+                SectionCard("၆. Aspect Ratio", Icons.Default.CropLandscape, Purple) {
+                    val ratios = AspectRatio.entries
+                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().heightIn(max = 60.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(ratios) { r ->
+                            val sel = r == s.selectedAspectRatio
+                            Surface(onClick = { vm.setAspectRatio(r) }, color = if (sel) Purple.copy(0.1f) else SurfaceDark, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, if (sel) Purple.copy(0.4f) else CardBorder)) {
+                                Text(r.label, fontSize = 11.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, color = if (sel) Color.White else TextPrimary, modifier = Modifier.padding(8.dp).fillMaxWidth(), textAlign = TextAlign.Center)
+                            }
+                        }
+                    }
+                }
+
+                // ═══ 7. VOLUME & AUDIO EFFECTS ═══
+                SectionCard("၇. Audio", Icons.Default.VolumeUp, Purple) {
+                    Text("Volume: ${"%.0f".format(s.volume * 100)}%", color = TextDim, fontSize = 11.sp)
+                    SliderWithLabel(value = s.volume, onValueChange = { vm.setVolume(it) }, valueRange = 0f..2f, label = "Volume", color = if (s.volume == 0f) WarningYellow else Purple)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Audio Effect", color = TextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().heightIn(max = 60.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(AudioEffect.entries) { e ->
+                            val sel = e == s.selectedAudioEffect
+                            Surface(onClick = { vm.setAudioEffect(e) }, color = if (sel) Purple.copy(0.1f) else SurfaceDark, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, if (sel) Purple.copy(0.4f) else CardBorder)) {
+                                Text(e.label, fontSize = 11.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, color = if (sel) Color.White else TextPrimary, modifier = Modifier.padding(8.dp).fillMaxWidth(), textAlign = TextAlign.Center)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Replace Audio Track", color = TextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton({ audioPicker.launch("audio/*") }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, if (s.audioReplaceUri != null) Emerald else CardBorder)) {
+                        Icon(if (s.audioReplaceUri != null) Icons.Default.CheckCircle else Icons.Default.AudioFile, null, tint = if (s.audioReplaceUri != null) Emerald else TextDim)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (s.audioReplaceUri != null) "Audio selected" else "Pick audio file", color = if (s.audioReplaceUri != null) Emerald else TextDim, fontSize = 13.sp)
+                    }
+                    if (s.audioReplaceUri != null) TextButton({ vm.setAudioReplace(null) }) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(14.dp), tint = ErrorRed); Text(" Remove", color = ErrorRed, fontSize = 12.sp) }
+                }
+
+                // ═══ 8. QUALITY ═══
+                SectionCard("၈. Output Quality", Icons.Default.HighQuality, Purple) {
+                    Text("Quality: ${s.quality}", color = TextDim, fontSize = 11.sp)
+                    Slider(value = s.quality.toFloat(), onValueChange = { vm.setQuality(it.toInt()) }, valueRange = 50f..99f, colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                    Text("File size will be reduced with lower quality", color = TextDim, fontSize = 11.sp)
+                }
+
+                // ═══ 9. WATERMARK + ADVANCED ═══
                 SectionCard("စာတန်း Watermark", Icons.Default.TextFields, Purple) {
                     OutlinedTextField(s.wmText, { vm.setWmText(it) }, Modifier.fillMaxWidth(), placeholder = { Text("Channel အမည်", fontSize = 13.sp) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple), shape = RoundedCornerShape(12.dp))
                     AnimatedVisibility(s.wmText.isNotBlank()) {
@@ -132,9 +237,10 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     if (s.voiceTab == "google" && s.aiText.isNotBlank()) { Spacer(Modifier.height(4.dp)); Surface(color = WarningYellow.copy(.08f), shape = RoundedCornerShape(8.dp)) { Text("⚠ Google Voice → Gold Coins", color = WarningYellow, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) } }
                 }
 
-                // ═══ 6. PROCESS ═══
+                // ═══ 10. PROCESS ═══
+                ProgressCard(visible = s.isProcessing, progress = s.processingProgress.percent, status = s.processStatus.ifBlank { "Processing..." }, elapsedSec = s.processingProgress.elapsedSec)
                 if (s.isProcessing) { Surface(color = Purple.copy(.08f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Purple.copy(.2f))) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Purple, strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(s.processStatus.ifBlank { "Processing..." }, color = TextPrimary, fontSize = 13.sp) } } }
-                PrimaryButton(text = if (s.isProcessing) "Processing..." else "စတင်ပြုပြင်မည် ${vm.costText}", onClick = { vm.startProcessing(ctx) }, loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null)
+                PrimaryButton(text = if (s.isProcessing) "Processing..." else "စတင်ပြုပြင်မည် ${vm.costText}${vm.premiumCostText}", onClick = { vm.startProcessing(ctx) }, loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null)
                 Spacer(Modifier.height(24.dp))
             }
         }

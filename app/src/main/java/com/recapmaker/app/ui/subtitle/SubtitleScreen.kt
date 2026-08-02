@@ -7,7 +7,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -85,12 +88,52 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                     }
                 }
 
-                PrimaryButton(text = if (s.isProcessing) "Generating..." else "Generate Subtitles", onClick = { vm.startProcessing(ctx) },
-                    loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null)
+                 // ═══ 2. STT SETTINGS ═══
+                SectionCard("STT Settings", Icons.Default.Language, Emerald) {
+                    Text("Speech Recognition Language", color = TextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    val languages = listOf("my" to "Myanmar (ဗမာ)", "en" to "English", "zh" to "Chinese", "es" to "Spanish", "fr" to "French")
+                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().heightIn(max = 80.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(languages) { (code, label) ->
+                            val sel = s.sttLanguage == code
+                            FilterChip(selected = sel, onClick = { vm.setSttLanguage(code) }, label = { Text(label, fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Emerald, selectedLabelColor = Color(0xFF051E16)))
+                        }
+                    }
+                }
+
+                // ═══ 3. PROCESS & RESULTS ═══
+                ProgressCard(visible = s.isProcessing, progress = 0f, status = s.processStatus, elapsedSec = 0)
+                if (s.isProcessing) { Surface(color = Emerald.copy(.08f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Emerald.copy(.2f))) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Emerald, strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(s.processStatus.ifBlank { "Processing..." }, color = TextPrimary, fontSize = 13.sp) } } }
+
+                // Show transcription results
+                if (s.subtitleSegments.isNotEmpty()) {
+                    SectionCard("Transcribed Text", Icons.Default.TextFormat, Emerald) {
+                        Text("Segments: ${s.subtitleSegments.size}", color = TextDim, fontSize = 11.sp)
+                        Spacer(Modifier.height(6.dp))
+                        LazyColumn(Modifier.heightIn(max = 150.dp)) {
+                            items(s.subtitleSegments) { seg ->
+                                Text("- [${"%.1f".format(seg.start)}s–${"%.1f".format(seg.end)}s] ${seg.text}", fontSize = 12.sp, color = TextPrimary)
+                                Spacer(Modifier.height(4.dp))
+                            }
+                        }
+                    }
+                }
+
+                // Show generated SRT preview
+                if (s.generatedSrt.isNotBlank()) {
+                    SectionCard("SRT Preview", Icons.Default.Subject, Emerald) {
+                        Text(s.generatedSrt.take(500) + if (s.generatedSrt.length > 500) "..." else "", fontSize = 11.sp, color = TextDim, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    }
+                }
+
+                PrimaryButton(text = if (s.isProcessing) "Generating..." else if (s.success != null) "Done!" else "Generate Subtitles", onClick = { vm.startProcessing(ctx) },
+                    loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null && !s.isProcessing)
                 Spacer(Modifier.height(24.dp))
             }
         }
         s.error?.let { msg -> Surface(Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(), color = ErrorRed.copy(0.9f), shape = RoundedCornerShape(12.dp)) { Row(Modifier.padding(14.dp)) { Text(msg, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f)); IconButton(onClick = { vm.clearError() }) { Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(18.dp)) } } }; LaunchedEffect(msg) { kotlinx.coroutines.delay(4000); vm.clearError() } }
+        s.success?.let { msg -> Surface(Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(), color = Emerald.copy(.9f), shape = RoundedCornerShape(12.dp)) { Text(msg, color = DarkBg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(14.dp)) }; LaunchedEffect(msg) { kotlinx.coroutines.delay(5000); vm.clearSuccess() } }
     }
 
     // ═══ RESOLUTION POPUP ═══

@@ -45,6 +45,18 @@ data class EditorState(
     val isAnalyzing: Boolean = false, val isProcessing: Boolean = false, val processStatus: String = "",
     val error: String? = null, val success: String? = null,
     val history: List<VideoHistoryEntity> = emptyList(), val showHistory: Boolean = false,
+    // ── NEW: Advanced editing features ──
+    val audioReplaceUri: Uri? = null,
+    val selectedResolution: ResolutionOption? = null,
+    val selectedSpeed: Float = 1.0f,
+    val selectedFilter: VideoFilter = VideoFilter.NONE,
+    val selectedAspectRatio: AspectRatio = AspectRatio.ORIGINAL,
+    val volume: Float = 1.0f,
+    val selectedAudioEffect: AudioEffect = AudioEffect.NONE,
+    val quality: Int = 85,
+    val trimStartSec: Int = 0,
+    val trimEndSec: Int = 0,
+    val processingProgress: ProcessingProgress = ProcessingProgress(),
 )
 
 @HiltViewModel
@@ -53,7 +65,14 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     init { loadCoins(); loadHistory() }
 
     private fun loadCoins() { viewModelScope.launch { when (val r = repo.getUserInfo()) { is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver, pricingTiers = r.data.pricing_tiers ?: emptyList()); is Result.Error -> {} } } }
-    val costText: String get() { val d = state.videoDuration; if (d == 0 && state.videoLocalPath == null) return ""; val c = getCostForDuration(d, state.pricingTiers); if (c == -1) return "(ရှည်လွန်း)"; if (c == 0) return "(အခမဲ့)"; return if (state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)) "(🥇 $c Gold)" else "($c Coins)" }
+    val costText: String get() {
+        val d = state.videoDuration; if (d == 0 && state.videoLocalPath == null) return ""
+        val baseCost = getCostForDuration(d, state.pricingTiers)
+        if (baseCost == -1) return "(ရှည်လွန်း)"
+        if (baseCost == 0 && !hasNewFeaturesEnabled) return "(အခမဲ့)"
+        val cost = baseCost + if (hasNewFeaturesEnabled) 5 else 0
+        return if (state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)) "(🥇 $cost Gold)" else "($cost Coins)"
+    }
     val filteredVoices: List<VoiceInfo> get() { val s = if (state.voiceTab == "google") VoiceData.googleVoices else VoiceData.microsoftVoices; val q = state.voiceSearch.lowercase().trim(); return if (q.isEmpty()) s else s.filter { it.label.lowercase().contains(q) || it.gender.name.lowercase().contains(q) } }
 
     // ═══ VIDEO SOURCE ═══
@@ -135,16 +154,30 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
 
             // ── 4. Build options + start service ──
             state = state.copy(processStatus = "Video processing...")
-            val opts = FFmpegProcessor.ProcessOptions(
-                flip = state.flipEnabled, speed = state.speedEnabled, pitch = state.pitchEnabled, noise = state.noiseEnabled,
-                blurAreas = if (state.blurEnabled) state.blurAreas else emptyList(),
-                logoPath = logoPath, logoX = state.logoArea.x, logoY = state.logoArea.y, logoW = state.logoArea.w.coerceAtLeast(10), logoH = state.logoArea.h.coerceAtLeast(10),
-                watermarkText = state.wmText, watermarkPosition = state.wmPosition, watermarkSize = state.wmSize, watermarkColor = state.wmColor,
-                watermarkScroll = state.wmScroll, watermarkBox = state.wmBox, watermarkBoxOpacity = state.wmBoxOpacity,
-                ttsAudioPath = ttsAudioPath, videoDurationSec = state.videoDuration,
-                videoWidth = state.videoWidth, videoHeight = state.videoHeight,
-                previewWidth = state.previewWidth, previewHeight = state.previewHeight,
-            )
+             val opts = FFmpegProcessor.ProcessOptions(
+                 flip = state.flipEnabled, speed = state.speedEnabled, pitch = state.pitchEnabled, noise = state.noiseEnabled,
+                 blurAreas = if (state.blurEnabled) state.blurAreas else emptyList(),
+                 logoPath = logoPath, logoX = state.logoArea.x, logoY = state.logoArea.y, logoW = state.logoArea.w.coerceAtLeast(10), logoH = state.logoArea.h.coerceAtLeast(10),
+                 watermarkText = state.wmText, watermarkPosition = state.wmPosition, watermarkSize = state.wmSize, watermarkColor = state.wmColor,
+                 watermarkScroll = state.wmScroll, watermarkBox = state.wmBox, watermarkBoxOpacity = state.wmBoxOpacity,
+                 ttsAudioPath = ttsAudioPath, videoDurationSec = state.videoDuration,
+                 videoWidth = state.videoWidth, videoHeight = state.videoHeight,
+                 previewWidth = state.previewWidth, previewHeight = state.previewHeight,
+                 // ── NEW: Advanced features ──
+                 resolution = state.selectedResolution,
+                 speedMultiplier = state.selectedSpeed,
+                 videoFilter = state.selectedFilter,
+                 aspectRatio = state.selectedAspectRatio,
+                 volume = state.volume,
+                 audioEffect = state.selectedAudioEffect,
+                 quality = state.quality,
+                 audioReplacePath = state.audioReplaceUri?.let { uri ->
+                     val f = File(context.cacheDir, "audio_repl_${System.currentTimeMillis()}.m4a")
+                     if (uri.copyToFile(context, f) && f.exists()) f.absolutePath else null
+                 },
+                 trimStartSec = if (state.trimStartSec > 0) state.trimStartSec else 0,
+                 trimEndSec = if (state.trimEndSec > 0 && state.trimEndSec < state.videoDuration) state.trimEndSec else 0,
+             )
 
             VideoProcessService.reset()
             VideoProcessService.pendingInputPath = inputPath
@@ -164,8 +197,18 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
 
             delay(1000)
             var maxWait = 600
+            val startTime = System.currentTimeMillis()
             while (VideoProcessService.isRunning && maxWait > 0) {
-                state = state.copy(processStatus = VideoProcessService.currentStatus.ifBlank { "Processing..." })
+                val elapsed = System.currentTimeMillis() - startTime
+                val percent = (elapsed.toFloat() / (maxWait * 500f) * 100f).coerceIn(0f, 100f)
+                state = state.copy(
+                    processStatus = VideoProcessService.currentStatus.ifBlank { "Processing..." },
+                    processingProgress = ProcessingProgress(
+                        percent = percent / 100f,
+                        status = VideoProcessService.currentStatus.ifBlank { "Processing..." },
+                        elapsedSec = elapsed / 1000,
+                    )
+                )
                 delay(500); maxWait--
             }
 
@@ -291,11 +334,11 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     private suspend fun finishProcess(result: FFmpegProcessor.ProcessResult, cost: Int, coinType: String) {
         if (result.success && result.outputPath != null) {
             historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = result.outputPath, status = "completed", duration = state.videoDuration))
-            state = state.copy(isProcessing = false, processStatus = "", success = "✅ ပြီးပါပြီ! (${result.durationMs / 1000}s)"); loadCoins()
+            state = state.copy(isProcessing = false, processStatus = "", success = "✅ ပြီးပါပြီ! (${result.durationMs / 1000}s)", processingProgress = ProcessingProgress()); loadCoins()
         } else {
             if (cost > 0) { repo.refundCoins(cost, "Failed", if (coinType == "gold") "gold" else "silver"); loadCoins() }
             historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
-            state = state.copy(isProcessing = false, processStatus = "", error = result.error ?: "Failed")
+            state = state.copy(isProcessing = false, processStatus = "", error = result.error ?: "Failed", processingProgress = ProcessingProgress())
         }; loadHistory()
     }
 
@@ -307,4 +350,38 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun deleteHistoryItem(item: VideoHistoryEntity) { viewModelScope.launch { historyDao.delete(item) } }
     fun clearError() { state = state.copy(error = null) }
     fun clearSuccess() { state = state.copy(success = null) }
+
+    // ═══ NEW: Advanced editing features ═══
+    val hasNewFeaturesEnabled: Boolean get() =
+        state.selectedResolution != null || state.selectedSpeed != 1.0f ||
+        state.selectedFilter != VideoFilter.NONE ||
+        state.selectedAspectRatio != AspectRatio.ORIGINAL ||
+        state.volume != 1.0f ||
+        state.selectedAudioEffect != AudioEffect.NONE
+
+    fun setAudioReplace(uri: Uri?) { state = state.copy(audioReplaceUri = uri) }
+    fun setResolution(r: ResolutionOption?) { state = state.copy(selectedResolution = r) }
+    fun setSpeed(s: Float) { state = state.copy(selectedSpeed = s) }
+    fun setFilter(f: VideoFilter) { state = state.copy(selectedFilter = f) }
+    fun setAspectRatio(r: AspectRatio) { state = state.copy(selectedAspectRatio = r) }
+    fun setVolume(v: Float) { state = state.copy(volume = v) }
+    fun setAudioEffect(e: AudioEffect) { state = state.copy(selectedAudioEffect = e) }
+    fun setQuality(q: Int) { state = state.copy(quality = q.coerceIn(50, 99)) }
+    fun setTrim(start: Int, end: Int) {
+        val safeEnd = if (state.videoDuration > 0) end.coerceAtMost(state.videoDuration) else end
+        val safeStart = start.coerceAtLeast(0).coerceAtMost(safeEnd)
+        state = state.copy(trimStartSec = safeStart, trimEndSec = safeEnd)
+    }
+
+    /** True if any coin-costing feature is enabled */
+    val premiumCostText: String get() {
+        val extras = mutableListOf<String>()
+        if (state.selectedResolution != null) extras.add("Res ${state.selectedResolution!!.label}")
+        if (state.selectedSpeed != 1.0f) extras.add("Speed ${state.selectedSpeed}x")
+        if (state.selectedFilter != VideoFilter.NONE) extras.add(state.selectedFilter.label)
+        if (state.selectedAspectRatio != AspectRatio.ORIGINAL) extras.add("AR ${state.selectedAspectRatio.label}")
+        if (state.volume != 1.0f) extras.add("Vol ${"%.0f".format(state.volume * 100)}%")
+        if (state.selectedAudioEffect != AudioEffect.NONE) extras.add(state.selectedAudioEffect.label)
+        return if (extras.isEmpty()) "" else " (+${extras.joinToString(", ")})"
+    }
 }

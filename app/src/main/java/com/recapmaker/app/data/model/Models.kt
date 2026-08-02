@@ -132,3 +132,95 @@ object VoiceData {
     fun isGeminiVoice(name: String) = name in geminiVoiceNames
 }
 
+// ── Video Editing (New Features) ──
+enum class VideoFilter(val label: String, val description: String) {
+    NONE("None", "No filter"),
+    GRAYSCALE("Grayscale", "Black & white"),
+    INVERT("Invert", "Color inversion"),
+    VINTAGE("Vintage", "Warm, film-like"),
+    COOL("Cool", "Cool blue tint"),
+    VIGNETTE("Vignette", "Darkened corners"),
+}
+
+enum class AudioEffect(val label: String) {
+    NONE("None"),
+    MUTE("Mute"),
+    LOUDNORM("Loudness Normalize"),
+    COMPRESS("Compress Dynamics"),
+    ECHO("Echo"),
+}
+
+data class ResolutionOption(
+    val label: String,
+    val width: Int,
+    val height: Int,
+    val bitrateKbps: Int,
+    val costsCoins: Boolean = true,
+)
+
+object ResolutionPresets {
+    val p240 = ResolutionOption("240p", 426, 240, 400)
+    val p360 = ResolutionOption("360p", 640, 360, 800)
+    val p480 = ResolutionOption("480p", 854, 480, 1200)
+    val p720 = ResolutionOption("720p", 1280, 720, 2500)
+    val p1080 = ResolutionOption("1080p", 1920, 1080, 4500)
+    val all = listOf(p240, p360, p480, p720, p1080)
+}
+
+enum class AspectRatio(val label: String, val ratio: Float) {
+    ORIGINAL("Original", 0f),
+    WIDESCREEN_16_9("16:9", 16f / 9f),
+    STANDARD_4_3("4:3", 4f / 3f),
+    SQUARE_1_1("1:1", 1f),
+    STORY_9_16("9:16", 9f / 16f),
+}
+
+data class SpeedOption(
+    val label: String,
+    val speed: Float, // FFmpeg atempo value (0.5-3.0 safe range for single pass, 0.5-100 for multiple)
+    val isPremium: Boolean = false,
+)
+
+val SpeedPresets = listOf(
+    SpeedOption("0.25x", 0.25f, isPremium = true),
+    SpeedOption("0.5x", 0.5f),
+    SpeedOption("0.75x", 0.75f),
+    SpeedOption("1x", 1.0f),
+    SpeedOption("1.25x", 1.25f),
+    SpeedOption("1.5x", 1.5f),
+    SpeedOption("2x", 2.0f),
+)
+
+val AudioEffectPresets = listOf(
+    AudioEffect.NONE,
+    AudioEffect.MUTE,
+    AudioEffect.LOUDNORM,
+    AudioEffect.COMPRESS,
+    AudioEffect.ECHO,
+)
+
+data class EditorConfig(
+    val trimStartSec: Int = 0,
+    val trimEndSec: Int = 0,
+    val speed: Float = 1.0f,
+    val resolution: ResolutionOption? = null,
+    val aspectRatio: AspectRatio = AspectRatio.ORIGINAL,
+    val volume: Float = 1.0f, // 0f = mute, 1f = normal, 2f = double
+    val audioEffect: AudioEffect = AudioEffect.NONE,
+    val videoFilter: VideoFilter = VideoFilter.NONE,
+    val quality: Int = 85, // 1-100 compression quality
+    val audioReplacePath: String? = null, // override audio track
+)
+
+data class SubtitleTrack(
+    val language: String = "en",
+    val segments: List<SttSegment> = emptyList(),
+    val srtContent: String = "",
+)
+
+data class ProcessingProgress(
+    val percent: Float = 0f, // 0.0 to 1.0
+    val status: String = "", // human-readable status
+    val elapsedSec: Long = 0L,
+)
+

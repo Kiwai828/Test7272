@@ -8,6 +8,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,12 +20,25 @@ class TokenManager @Inject constructor(@ApplicationContext private val context: 
         private val KEY_TOKEN = stringPreferencesKey("jwt_token")
         private val KEY_USERNAME = stringPreferencesKey("username")
     }
+    @Volatile private var cachedToken: String? = null
+    private val isCacheLoaded = AtomicBoolean(false)
     val tokenFlow: Flow<String?> = context.dataStore.data.map { it[KEY_TOKEN] }
     val isLoggedIn: Flow<Boolean> = tokenFlow.map { !it.isNullOrEmpty() }
     suspend fun getToken(): String? = tokenFlow.first()
+    suspend fun initCache() {
+        if (isCacheLoaded.compareAndSet(false, true)) {
+            cachedToken = tokenFlow.first()
+        }
+    }
+    fun getCachedToken(): String? = cachedToken
     suspend fun getUsername(): String? = context.dataStore.data.first()[KEY_USERNAME]
     suspend fun saveToken(token: String, username: String = "") {
         context.dataStore.edit { it[KEY_TOKEN] = token; if (username.isNotEmpty()) it[KEY_USERNAME] = username }
+        cachedToken = token
     }
-    suspend fun clear() { context.dataStore.edit { it.clear() } }
+    suspend fun clear() {
+        context.dataStore.edit { it.clear() }
+        cachedToken = null
+        isCacheLoaded.set(false)
+    }
 }

@@ -10,7 +10,11 @@ import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
+import com.recapmaker.app.data.model.AspectRatio
+import com.recapmaker.app.data.model.AudioEffect
 import com.recapmaker.app.data.model.BlurArea
+import com.recapmaker.app.data.model.ResolutionOption
+import com.recapmaker.app.data.model.VideoFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,6 +41,17 @@ object FFmpegProcessor {
         val videoDurationSec: Int = 0,
         val videoWidth: Int = 0, val videoHeight: Int = 0,
         val previewWidth: Int = 0, val previewHeight: Int = 0,
+        // ── NEW: Advanced editing features ──
+        val resolution: ResolutionOption? = null,
+        val speedMultiplier: Float = 1.0f,
+        val videoFilter: VideoFilter = VideoFilter.NONE,
+        val aspectRatio: AspectRatio = AspectRatio.ORIGINAL,
+        val volume: Float = 1.0f,
+        val audioEffect: AudioEffect = AudioEffect.NONE,
+        val quality: Int = 85,
+        val audioReplacePath: String? = null,
+        val trimStartSec: Int = 0,
+        val trimEndSec: Int = 0,
     )
 
     data class ProcessResult(
@@ -177,8 +192,46 @@ object FFmpegProcessor {
 
         // ── Video filter parts ──
         val vfParts = mutableListOf<String>()
-        if (opts.flip)  vfParts.add("hflip")
-        if (opts.speed) vfParts.add("setpts=PTS/1.05")
+        if (opts.flip) vfParts.add("hflip")
+
+        // Speed multiplier (replaces the simple 1.05x speed opt)
+        if (opts.speedMultiplier != 1.0f) {
+            vfParts.add("setpts=PTS/${"%.2f".format(opts.speedMultiplier)}")
+        } else if (opts.speed) {
+            vfParts.add("setpts=PTS/1.05") // legacy speed opt
+        }
+
+        // Video filter presets
+        when (opts.videoFilter) {
+            VideoFilter.NONE -> {}
+            VideoFilter.GRAYSCALE -> vfParts.add("hue=s=0")
+            VideoFilter.INVERT -> vfParts.add("negate")
+            VideoFilter.VINTAGE -> vfParts.addAll(listOf("colorbalance=bs=.1:gs=.2:rs=.1", "eq=gamma=1.1:saturation=0.8"))
+            VideoFilter.COOL -> vfParts.add("colorchannelmixer=.7:.2:.1:.1:.8:.1:.1:.1:.9")
+            VideoFilter.VIGNETTE -> vfParts.add("vignette=PI/4*(3*sqrt(x*y)/(cos(PI*x/W)^2+cos(PI*y/H)^2)+1)*0.1")
+        }
+
+        // Resolution scaling
+        opts.resolution?.let { res ->
+            vfParts.add("scale=${res.width}:${res.height}:flags=lanczos")
+        }
+
+        // Aspect ratio cropping
+        if (opts.aspectRatio != AspectRatio.ORIGINAL && opts.aspectRatio.ratio > 0) {
+            val targetW = opts.videoWidth
+            val targetH = opts.videoHeight
+            if (targetW > 0 && targetH > 0) {
+                val targetRatio = opts.aspectRatio.ratio
+                val srcRatio = targetW.toFloat() / targetH
+                if (srcRatio > targetRatio) {
+                    val newW = (targetH * targetRatio).toInt()
+                    vfParts.add("crop=$newW:$targetH:(w-$newW)/2:0")
+                } else {
+                    val newH = (targetW / targetRatio).toInt()
+                    vfParts.add("crop=$targetW:$newH:0:(h-$newH)/2")
+                }
+            }
+        }
 
         for (a in opts.blurAreas) {
             val bx = scaleX(a.x).coerceAtLeast(0)
@@ -215,26 +268,46 @@ object FFmpegProcessor {
 
         // ── Audio filter parts ──
         val afParts = mutableListOf<String>()
-        if (!hasTts) {
-            if (opts.speed) afParts.add("atempo=1.05")
+        if (!hasTts && opts.audioEffect != AudioEffect.MUTE) {
+            // Speed affects audio tempo too
+            if (opts.speedMultiplier != 1.0f) {
+                afParts.addAll(atempoFilters(opts.speedMultiplier))
+            } else if (opts.speed) {
+                afParts.add("atempo=1.05")
+            }
             if (opts.pitch) { afParts.add("asetrate=44100*0.94"); afParts.add("aresample=44100") }
+            // Volume control
+            if (opts.volume != 1.0f) {
+                afParts.add("volume=${"%.2f".format(opts.volume)}")
+            }
+            // Audio effects
+            when (opts.audioEffect) {
+                AudioEffect.LOUDNORM -> afParts.add("loudnorm=I=-16:TP=-1.5:LRA=11")
+                AudioEffect.COMPRESS -> afParts.add("acompressor=threshold=-12dB:ratio=3:attack=5:release=50")
+                AudioEffect.ECHO -> afParts.add("aecho=0.8:0.9:1000:0.3")
+                else -> {}
+            }
         }
+        val hasAudioReplace = opts.audioReplacePath != null && File(opts.audioReplacePath).exists()
 
-        // ── Nothing to do → stream copy ──
-        if (vfParts.isEmpty() && afParts.isEmpty() && !hasLogo && !hasTts) {
+        // ── Nothing to do → stream copy (if no trim, no audio replace, no mute) ──
+        if (vfParts.isEmpty() && afParts.isEmpty() && !hasLogo && !hasTts && !hasAudioReplace && opts.audioEffect != AudioEffect.MUTE && opts.trimStartSec == 0 && opts.trimEndSec == 0) {
             return "-i $input -c copy -y $output"
         }
 
         val sb = StringBuilder()
+        // Trim: use -ss/-t before -i for fast seeking
+        if (opts.trimStartSec > 0) sb.append("-ss ${opts.trimStartSec} ")
         sb.append("-i $input ")
         var inputIdx = 1
         val logoIdx = if (hasLogo) { sb.append("-i ${opts.logoPath} "); val i = inputIdx; inputIdx++; i } else -1
         val ttsIdx  = if (hasTts)  { sb.append("-i ${opts.ttsAudioPath} "); val i = inputIdx; inputIdx++; i } else -1
+        val audioReplaceIdx = if (hasAudioReplace) { sb.append("-i ${opts.audioReplacePath} "); val i = inputIdx; inputIdx++; i } else -1
 
         // ── Decide strategy ──
         // Strategy A (filter_complex): logo present OR audio filters needed
         // Strategy B (simple -vf / -af): video-only filters, no logo
-        val needFilterComplex = hasLogo || afParts.isNotEmpty()
+        val needFilterComplex = hasLogo || afParts.isNotEmpty() || hasAudioReplace || opts.audioEffect == AudioEffect.MUTE
 
         if (needFilterComplex) {
             val fc = StringBuilder()
@@ -257,13 +330,15 @@ object FFmpegProcessor {
                 if (vfParts.isNotEmpty()) {
                     fc.append("[0:v]${vfParts.joinToString(",")}[vout]")
                 } else {
-                    // No video filter needed — still need filter_complex for audio
                     fc.append("[0:v]null[vout]")
                 }
             }
 
             // Audio chain in filter_complex
-            val audioSrc = if (hasTts) "$ttsIdx:a" else "0:a"
+            // Determine which audio source to use
+            val useAudioReplace = hasAudioReplace
+            val useMute = opts.audioEffect == AudioEffect.MUTE && !hasTts
+            val audioSrc = if (hasTts) "$ttsIdx:a" else if (useAudioReplace) "$audioReplaceIdx:a" else "0:a"
             if (afParts.isNotEmpty()) {
                 fc.append(";[$audioSrc]${afParts.joinToString(",")}[aout]")
                 sb.append("-filter_complex $fc ")
@@ -271,13 +346,25 @@ object FFmpegProcessor {
             } else {
                 sb.append("-filter_complex $fc ")
                 sb.append("-map [vout] ")
-                if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
+                if (useMute) {
+                    sb.append("-an ") // no audio output
+                } else if (useAudioReplace) {
+                    sb.append("-map $audioReplaceIdx:a ")
+                } else if (hasTts) {
+                    sb.append("-map $ttsIdx:a ")
+                } else {
+                    sb.append("-map 0:a? ")
+                }
             }
         } else {
             // Strategy B: simple -vf (no filter_complex), no logo
             if (vfParts.isNotEmpty()) sb.append("-vf ${vfParts.joinToString(",")} ")
             // -map not needed with -vf alone; add audio map
-            if (hasTts) sb.append("-map 0:v -map $ttsIdx:a ") else sb.append("-map 0:v -map 0:a? ")
+            if (opts.audioEffect == AudioEffect.MUTE && !hasTts) {
+                sb.append("-map 0:v -an ")
+            } else if (hasTts) sb.append("-map 0:v -map $ttsIdx:a ")
+            else if (hasAudioReplace) sb.append("-map 0:v -map $audioReplaceIdx:a ")
+            else sb.append("-map 0:v -map 0:a? ")
         }
 
         val shortestFlag = if (hasTts) "-shortest " else ""
@@ -285,9 +372,14 @@ object FFmpegProcessor {
         // MediaMetadataRetriever gives total bitrate; subtract audio to get video bitrate
         val origKbps = getVideoBitrateKbps(originalPath)
         val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
-        Log.d(TAG, "Original bitrate: ${origKbps}kbps → target: ${targetKbps}kbps")
-        // -q:v 1 = best mpeg4 quality (1-31, lower=better); -b:v ensures we match original
-        sb.append("-c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart $shortestFlag-y $output")
+        // Quality setting (1-100): maps to ffmpeg -q:v (1=best, 31=worst) and bitrate
+        val quality = opts.quality.coerceIn(1, 99)
+        val ffmpegQ = ((31 - 1) * (100 - quality) / 99 + 1).toInt().coerceIn(1, 31)
+        val effectiveKbps = (targetKbps * quality / 100).coerceIn(800, 20_000)
+        Log.d(TAG, "Original bitrate: ${origKbps}kbps → target: ${effectiveKbps}kbps, quality: $quality (-q:v $ffmpegQ)")
+        // -q:v for mpeg4 quality; -b:v controls bitrate; -t for trim end
+        val tFlag = if (opts.trimEndSec > 0 && opts.trimEndSec > opts.trimStartSec) "-t ${opts.trimEndSec - opts.trimStartSec} " else ""
+        sb.append("-c:v mpeg4 -q:v $ffmpegQ -b:v ${effectiveKbps}k -c:a aac -b:a 192k -movflags +faststart $shortestFlag$tFlag-y $output")
         return sb.toString()
     }
 
@@ -318,6 +410,16 @@ object FFmpegProcessor {
         "bottom_right"  -> "w-text_w-10"   to "h-text_h-10"
         "center"        -> "(w-text_w)/2"  to "(h-text_h)/2"
         else            -> "(w-text_w)/2"  to "h-text_h-10"
+    }
+
+    /** Build atempo filter chain for speeds outside 0.5–3.0 range. */
+    private fun atempoFilters(speed: Float): List<String> {
+        if (speed in 0.5f..3.0f) return listOf("atempo=${"%.2f".format(speed)}")
+        // For speeds < 0.5, chain multiple atempo(0.5) filters
+        // For speeds > 3.0, chain multiple atempo(3.0) filters
+        val target = if (speed < 0.5f) 0.5f else 3.0f
+        val chains = Math.ceil(Math.log(speed.toDouble()) / Math.log(target.toDouble())).toInt().coerceAtLeast(1)
+        return List(chains) { "atempo=${"%.2f".format(target)}" }
     }
 
     suspend fun saveToGallery(context: Context, inputFile: File): String? = withContext(Dispatchers.IO) {

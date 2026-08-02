@@ -15,37 +15,37 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
 
     suspend fun getUserInfo(): Result<UserInfoResponse> = try {
         val r = api.getUserInfo()
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun getConfig(): Result<ConfigResponse> = try {
         val r = api.getConfig()
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error("Failed")
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun dailyCheckin(): Result<CoinResponse> = try {
         val r = api.dailyCheckin()
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun deductCoins(amount: Int, reason: String, coinType: String = "auto"): Result<CoinResponse> = try {
         val r = api.deductCoins(DeductCoinsRequest(amount, reason, coinType))
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun refundCoins(amount: Int, reason: String, coinType: String = "gold"): Result<CoinResponse> = try {
         val r = api.refundCoins(RefundCoinsRequest(amount, reason, coinType))
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun geminiTts(text: String, voice: String): Result<TtsResponse> = try {
         val r = api.geminiTts(TtsRequest(text, voice))
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "TTS failed"))
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "TTS failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun analyzeText(text: String = "", instruction: String = "", audioBase64: String? = null): Result<AnalyzeResponse> = try {
         val r = api.analyzeText(AnalyzeRequest(text = text, system_instruction = instruction, audio_data = audioBase64))
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Analyze failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun groqStt(audioFile: File, language: String = "my"): Result<SttResponse> = try {
@@ -53,11 +53,11 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         val langPart = language.toRequestBody("text/plain".toMediaType())
         val modelPart = "whisper-large-v3".toRequestBody("text/plain".toMediaType())
         val r = api.groqStt(audioPart, langPart, modelPart)
-        if (r.isSuccessful) Result.Success(r.body()!!) else Result.Error(extractDetail(r.errorBody()?.string() ?: "STT failed"))
+        if (r.isSuccessful) Result.Success(r.body() ?: return Result.Error("Empty response body")) else Result.Error(extractDetail(r.errorBody()?.string() ?: "STT failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
     suspend fun getPackages(): Result<List<CoinPackage>> = try {
         val r = api.getPackages()
-        if (r.isSuccessful) Result.Success(r.body() ?: emptyList()) else Result.Error("Failed")
+        if (r.isSuccessful) Result.Success(r.body() ?: emptyList()) else Result.Error(extractDetail(r.errorBody()?.string() ?: "Failed"))
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 }

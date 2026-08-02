@@ -14,6 +14,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -25,7 +28,12 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object AppModule {
     @Provides @Singleton
-    fun provideTokenManager(@ApplicationContext ctx: Context) = TokenManager(ctx)
+    fun provideTokenManager(@ApplicationContext ctx: Context): TokenManager {
+        val tm = TokenManager(ctx)
+        // Eagerly load the token cache on app startup, off the OkHttp interceptor thread.
+        CoroutineScope(Dispatchers.IO).launch { tm.initCache() }
+        return tm
+    }
 
     @Provides @Singleton
     fun provideOkHttp(auth: AuthInterceptor): OkHttpClient {

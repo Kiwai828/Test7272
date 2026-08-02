@@ -1,6 +1,7 @@
 # ── Gson ──
 -keepattributes Signature
 -keepattributes *Annotation*
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleAnnotations
 -keep class com.recapmaker.app.data.model.** { *; }
 -keep class com.recapmaker.app.data.api.** { *; }
 -keep class com.google.gson.** { *; }
@@ -31,3 +32,27 @@
 # ── Kotlin ──
 -dontwarn kotlinx.coroutines.**
 -dontwarn dagger.hilt.**
+
+# ── Kotlinx Serialization ──
+-keepclassmembers class kotlin.Metadata { *; }
+-keep class kotlinx.serialization.** { *; }
+-keepattributes InnerClasses,EnclosedMethod
+
+# ── ExoPlayer / Media3 ──
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
+
+# ── Coil ──
+-keep class coil.** { *; }
+-dontwarn coil.**
+
+# ── Hilt / Generated ──
+-keep class dagger.hilt.internal.** { *; }
+-keep class * extends dagger.hilt.compiler.** { *; }
+-keep class * extends androidx.hilt.** { *; }
+-keepclasseswithmembernames class * { @dagger.hilt.android.AndroidEntryPoint <methods>; }
+
+# ── Room (generated code) ──
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep @androidx.room.Entity class * { *; }
+-keepclassmembers class * { @androidx.room.PrimaryKey <fields>; }

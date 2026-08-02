@@ -55,7 +55,7 @@ class VideoProcessService : Service() {
         val options = pendingOptions
 
         if (inputPath == null || options == null) {
-            Log.e(TAG, "No pending input/options — stopping")
+            Log.e(TAG, "No pending input/options — stopping. inputPath=$inputPath, options=$options")
             resultSuccess = false
             resultMessage = "Service error: no input data"
             isRunning = false
@@ -85,14 +85,21 @@ class VideoProcessService : Service() {
                     Log.d(TAG, "Saving to gallery...")
 
                     val outputFile = File(result.outputPath)
-                    val galleryUri = FFmpegProcessor.saveToGallery(this@VideoProcessService, outputFile)
+                    var galleryUri: String? = null
+                    try {
+                        galleryUri = FFmpegProcessor.saveToGallery(this@VideoProcessService, outputFile)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Gallery save failed: ${e.message}", e)
+                    }
 
                     resultSuccess = true
                     resultOutputPath = galleryUri ?: result.outputPath
                     resultMessage = "✅ ပြီးပါပြီ! Movies/RecapMaker/ (${result.durationMs / 1000}s)"
 
-                    outputFile.delete()
-                    showDoneNotification("✅ Video ပြီးပါပြီ!", "Movies/RecapMaker/ ထဲ သိမ်းပြီး")
+                    if (galleryUri != null) {
+                        outputFile.delete()
+                    }
+                    showDoneNotification("✅ Video ပြီးပါပြီ!", "Movies/RecapMaker/ ထဲ သိမ့်ပါတယ်")
                     Log.d(TAG, "Success! Gallery URI: $galleryUri")
                 } else {
                     resultSuccess = false
