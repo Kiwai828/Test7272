@@ -117,7 +117,13 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
         if (s.error != null) {
             Spacer(Modifier.height(12.dp))
             ErrorBanner(s.error)
-            LaunchedEffect(s.error) { kotlinx.coroutines.delay(3000); vm.clearError() }
+        }
+
+        LaunchedEffect(s.error) {
+            if (s.error != null) {
+                kotlinx.coroutines.delay(3000)
+                vm.clearError()
+            }
         }
 
         Spacer(Modifier.height(80.dp))
