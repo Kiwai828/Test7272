@@ -118,17 +118,31 @@ class VideoProcessService : Service() {
                 isRunning = false
                 Log.d(TAG, "Service finishing, isRunning=false")
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                try {
+                    stopSelf()
+                } catch (e: Exception) {
+                    Log.w(TAG, "stopSelf() failed: ${e.message}")
+                }
             }
         }
 
         return START_NOT_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.d(TAG, "Task removed — cleaning up foreground")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        reset()
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         job.cancel()
-        super.onDestroy()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        reset()
         Log.d(TAG, "Service destroyed")
+        super.onDestroy()
     }
 
     private fun createNotificationChannel() {
