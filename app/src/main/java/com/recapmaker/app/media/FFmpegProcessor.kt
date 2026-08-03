@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
@@ -115,17 +116,19 @@ object FFmpegProcessor {
         (videoBps / 1000).coerceAtLeast(500)
     } catch (_: Exception) { 0 }
 
-    private fun getAudioBitrate(path: String): Int = try {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(path)
-        for (i in 0 until extractor.trackCount) {
-            val format = extractor.getTrackFormat(i)
-            if (format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                return format.getInteger(MediaFormat.KEY_BIT_RATE)
+    private fun getAudioBitrate(path: String): Int {
+        return try {
+            val extractor = MediaExtractor()
+            extractor.setDataSource(path)
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                if (format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                    return format.getInteger(MediaFormat.KEY_BIT_RATE)
+                }
             }
-        }
-        0
-    } catch (_: Exception) { 0 }
+            0
+        } catch (_: Exception) { 0 }
+    }
 
     suspend fun matchAudioToVideoDuration(audioPath: String, videoDurSec: Int, context: Context): String? =
         withContext(Dispatchers.IO) {
