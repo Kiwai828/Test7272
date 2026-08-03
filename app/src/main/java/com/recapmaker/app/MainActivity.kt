@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -18,7 +19,7 @@ import com.recapmaker.app.ui.settings.SettingsScreen
 import com.recapmaker.app.ui.subtitle.SubtitleScreen
 import com.recapmaker.app.ui.subtitle.SubtitleViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -28,13 +29,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val hasToken = runBlocking { tokenManager.getToken() != null }
+        lifecycleScope.launch {
+            val hasToken = tokenManager.getToken() != null
+            setContent {
+                RecapTheme {
+                    val nav = rememberNavController()
 
-        setContent {
-            RecapTheme {
-                val nav = rememberNavController()
-
-                NavHost(nav, startDestination = if (hasToken) "dashboard" else "login") {
+                    NavHost(nav, startDestination = if (hasToken) "dashboard" else "login") {
 
                     composable("login") {
                         val vm: AuthViewModel = hiltViewModel()
@@ -65,8 +66,10 @@ class MainActivity : ComponentActivity() {
                             onSubtitle = { nav.navigate("subtitle") },
                             onSettings = { nav.navigate("settings") },
                             onLogout = {
-                                runBlocking { tokenManager.clear() }
-                                nav.navigate("login") { popUpTo(0) { inclusive = true } }
+                                lifecycleScope.launch {
+                                    tokenManager.clear()
+                                    nav.navigate("login") { popUpTo(0) { inclusive = true } }
+                                }
                             },
                         )
                     }
@@ -90,8 +93,10 @@ class MainActivity : ComponentActivity() {
                             vm = authVm,
                             onBack = { nav.popBackStack() },
                             onLogout = {
-                                runBlocking { tokenManager.clear() }
-                                nav.navigate("login") { popUpTo(0) { inclusive = true } }
+                                lifecycleScope.launch {
+                                    tokenManager.clear()
+                                    nav.navigate("login") { popUpTo(0) { inclusive = true } }
+                                }
                             },
                         )
                     }
@@ -99,4 +104,5 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 }
