@@ -45,22 +45,12 @@ data class EditorState(
     val isAnalyzing: Boolean = false, val isProcessing: Boolean = false, val processStatus: String = "",
     val error: String? = null, val success: String? = null,
     val history: List<VideoHistoryEntity> = emptyList(), val showHistory: Boolean = false,
-    val videoEffects: VideoEffectsState = VideoEffectsState(),
+    val videoEffects: FFmpegProcessor.VideoEffectsState = FFmpegProcessor.VideoEffectsState(),
     val bgMusicUri: Uri? = null, val bgMusicVolume: Float = 0.3f, val autoDuck: Boolean = true,
-    val audioEffects: AudioEffectsState = AudioEffectsState(),
+    val audioEffects: FFmpegProcessor.AudioEffectsState = FFmpegProcessor.AudioEffectsState(),
     val extraClips: List<String> = emptyList(),
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
-)
-
-data class VideoEffectsState(
-    val grayscale: Boolean = false, val sepia: Boolean = false, val vignette: Boolean = false,
-    val brightness: Float = 1.0f, val contrast: Float = 1.0f,
-)
-
-data class AudioEffectsState(
-    val echo: Boolean = false, val reverb: Boolean = false, val bassBoost: Boolean = false,
-    val echoDelay: Float = 60f, val echoDecay: Float = 0.4f, val reverbAmount: Float = 0.3f, val bassAmount: Float = 3f,
 )
 
 @HiltViewModel
