@@ -1,5 +1,9 @@
 package com.recapmaker.app.ui.auth
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -35,9 +40,12 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
             Box(Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary, modifier = Modifier.clickable { vm.resetState(); onBack() }.padding(8.dp))
             }
-            Spacer(Modifier.height(20.dp))
-            Text(if (s.resetCodeSent) "Code ဖြည့်ပါ" else "Password ပြန်ယူရန်", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Text(if (s.resetCodeSent) "Email ထဲ ပို့ထားတဲ့ 6-digit code" else "မှတ်ပုံတင်ထားတဲ့ Email ဖြည့်ပါ", fontSize = 13.sp, color = TextDim, textAlign = TextAlign.Center)
+            AnimatedVisibility(visible = true, enter = androidx.compose.animation.fadeIn(tween(400))) {
+                Text(if (s.resetCodeSent) "Code ဖြည့်ပါ" else "Password ပြန်ယူရန်", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+            AnimatedVisibility(visible = true, enter = androidx.compose.animation.fadeIn(tween(400)) + androidx.compose.animation.slideInVertically { 10 }) {
+                Text(if (s.resetCodeSent) "Email ထဲ ပို့ထားတဲ့ 6-digit code" else "မှတ်ပုံတင်ထားတဲ့ Email ဖြည့်ပါ", fontSize = 13.sp, color = TextDim, textAlign = TextAlign.Center)
+            }
             Spacer(Modifier.height(24.dp))
 
             if (!s.resetCodeSent) {

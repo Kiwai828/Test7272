@@ -27,16 +27,23 @@ fun SettingsScreen(
     vm: AuthViewModel,
     onBack: () -> Unit,
     onLogout: () -> Unit,
+    onRefresh: (() -> Unit)? = null,
 ) {
     val s = vm.state
     var showChangePw by remember { mutableStateOf(false) }
     var showLinkEmail by remember { mutableStateOf(false) }
     var currentEmail by remember { mutableStateOf(email ?: "") }
 
+    // Keep local snapshot in sync with upstream email param changes
+    LaunchedEffect(email, s.linkedEmail) {
+        currentEmail = s.linkedEmail ?: email ?: ""
+    }
+
     // Close dialogs on success
     LaunchedEffect(s.linkEmailDone) {
         if (s.linkEmailDone) {
-            currentEmail = s.let { "" } // will refresh from server
+            currentEmail = s.linkedEmail ?: ""
+            onRefresh?.invoke()
             showLinkEmail = false
             vm.resetLinkEmailDone()
         }
@@ -52,6 +59,10 @@ fun SettingsScreen(
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary) }
             Text("Settings", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            if (onRefresh != null) {
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, null, tint = TextDim) }
+            }
         }
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
@@ -61,7 +72,7 @@ fun SettingsScreen(
                     Text("Account", fontWeight = FontWeight.SemiBold, color = TextPrimary)
                     Spacer(Modifier.height(12.dp))
                     InfoRow("Username", username)
-                    InfoRow("Email", email ?: "Not linked")
+                    InfoRow("Email", if (currentEmail.isBlank()) "Not linked" else currentEmail)
                 }
             }
 
@@ -70,7 +81,7 @@ fun SettingsScreen(
             // Actions
             Surface(color = CardBg, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    if (email == null) {
+                    if (currentEmail.isBlank()) {
                         SettingsItem(Icons.Default.Email, "Link Email", "Password recovery အတွက်") { showLinkEmail = true }
                         HorizontalDivider(color = CardBorder)
                     }

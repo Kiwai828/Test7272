@@ -1,10 +1,33 @@
 package com.recapmaker.app.ui.common
 
 import android.net.Uri
-import androidx.compose.animation.*
-import androidx.compose.foundation.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -13,14 +36,38 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BorderStroke
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -32,11 +79,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -56,53 +105,206 @@ fun AppTextField(
     modifier: Modifier = Modifier, imeAction: ImeAction = ImeAction.Next,
     onImeAction: () -> Unit = {},
     keyboardOptions: KeyboardOptions = KeyboardOptions(imeAction = imeAction),
+    errorText: String? = null,
 ) {
+    val isError = errorText != null
+    val accent = if (isError) ErrorRed else Purple
     OutlinedTextField(
         value = value, onValueChange = onValueChange, label = { Text(label) },
-        singleLine = true, modifier = modifier.fillMaxWidth(),
+        singleLine = true, isError = isError,
+        modifier = modifier.fillMaxWidth().animateContentSize(),
         keyboardOptions = keyboardOptions,
         keyboardActions = KeyboardActions { onImeAction() },
-        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, focusedLabelColor = Purple, cursorColor = Purple),
-        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = accent,
+            unfocusedBorderColor = if (isError) ErrorRed else CardBorder,
+            focusedLabelColor = accent,
+            unfocusedLabelColor = TextDim,
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary,
+            cursorColor = accent,
+            errorBorderColor = ErrorRed,
+            errorCursorColor = ErrorRed,
+            errorLabelColor = ErrorRed,
+        ),
+        shape = MaterialTheme.shapes.small,
     )
+    if (isError && errorText != null) {
+        Text(errorText, color = ErrorRed, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp, top = 2.dp))
+    }
 }
 
 @Composable
 fun PasswordField(
     value: String, onValueChange: (String) -> Unit, label: String = "Password",
     modifier: Modifier = Modifier, imeAction: ImeAction = ImeAction.Done, onImeAction: () -> Unit = {},
+    errorText: String? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
+    val isError = errorText != null
+    val accent = if (isError) ErrorRed else Purple
     OutlinedTextField(
         value = value, onValueChange = onValueChange, label = { Text(label) },
-        singleLine = true, modifier = modifier.fillMaxWidth(),
+        singleLine = true, isError = isError,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, tint = TextDim) } },
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, tint = if (isError) ErrorRed else TextDim)
+            }
+        },
+        modifier = modifier.fillMaxWidth().animateContentSize(),
         keyboardOptions = KeyboardOptions(imeAction = imeAction),
         keyboardActions = KeyboardActions { onImeAction() },
-        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, focusedLabelColor = Purple, cursorColor = Purple),
-        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = accent,
+            unfocusedBorderColor = if (isError) ErrorRed else CardBorder,
+            focusedLabelColor = accent,
+            unfocusedLabelColor = TextDim,
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary,
+            cursorColor = accent,
+            errorBorderColor = ErrorRed,
+            errorCursorColor = ErrorRed,
+            errorLabelColor = ErrorRed,
+        ),
+        shape = MaterialTheme.shapes.small,
     )
+    if (isError && errorText != null) {
+        Text(errorText, color = ErrorRed, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp, top = 2.dp))
+    }
 }
+
+// ══════════════════════════════════
+// BUTTONS — filled, outlined, text
+// ══════════════════════════════════
 
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, loading: Boolean = false, modifier: Modifier = Modifier, color: Color = Purple, enabled: Boolean = true) {
-    Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(50.dp), enabled = !loading && enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = color.copy(0.4f)), shape = RoundedCornerShape(12.dp)) {
-        if (loading) CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
-        else Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .animateContentSize(animationSpec = tween(300)),
+        enabled = !loading && enabled,
+        shape = MaterialTheme.shapes.small,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = color,
+            contentColor = OnPrimary,
+            disabledContainerColor = color.copy(0.4f),
+            disabledContentColor = OnPrimary,
+        ),
+    ) {
+        Crossfade(targetKey = loading) { isLoading ->
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = OnPrimary, strokeWidth = 2.dp)
+            } else {
+                Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
 
 @Composable
-fun ErrorBanner(message: String?) {
-    if (message != null) {
-        Surface(color = ErrorRed.copy(0.15f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Text(message, color = ErrorRed, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center)
-        }
-        Spacer(Modifier.height(12.dp))
+fun AppOutlinedButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    color: Color = Purple,
+    contentColor: Color = TextPrimary,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .animateContentSize(animationSpec = tween(300)),
+        enabled = enabled,
+        shape = MaterialTheme.shapes.small,
+        border = BorderStroke(1.dp, if (enabled) color else CardBorder.copy(0.4f)),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = if (enabled) contentColor else TextDim,
+            disabledContainerColor = Color.Transparent,
+        ),
+    ) {
+        Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     }
 }
+
+@Composable
+fun AppTextButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    color: Color = Purple,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.animateContentSize(animationSpec = tween(300)),
+        enabled = enabled,
+    ) {
+        Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) color else TextDim)
+    }
+}
+
+// ══════════════════════════════════
+// ICON BUTTON — consistent sizing & padding
+// ══════════════════════════════════
+
+@Composable
+fun AppIconButton(
+    icon: ImageVector,
+    contentDesc: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = TextDim,
+    size: Dp = 18.dp,
+) {
+    val hit = if (size < 20.dp) 36.dp else 40.dp
+    Box(
+        modifier = modifier
+            .size(hit)
+            .clip(MaterialTheme.shapes.extraSmall)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDesc, tint = tint, modifier = Modifier.size(size))
+    }
+}
+
+// ══════════════════════════════════
+// ERROR BANNER
+// ══════════════════════════════════
+
+@Composable
+fun ErrorBanner(message: String?) {
+    AnimatedVisibility(
+        visible = message != null,
+        enter = fadeIn(animationSpec = tween(300)) + slideInVertically { -it },
+        exit = fadeOut(animationSpec = tween(200)),
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.errorContainer,
+            shape = MaterialTheme.shapes.extraSmall,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                message ?: "",
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(12.dp),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+    if (message != null) Spacer(Modifier.height(12.dp))
+}
+
+// ══════════════════════════════════
+// COIN BADGE
+// ══════════════════════════════════
 
 @Composable
 fun CoinBadge(gold: Int, silver: Int, modifier: Modifier = Modifier) {
@@ -126,7 +328,13 @@ fun CoinBadge(gold: Int, silver: Int, modifier: Modifier = Modifier) {
 
 @Composable
 fun SectionCard(title: String, icon: ImageVector? = null, iconColor: Color = Purple, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier = modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder)) {
+    Surface(
+        modifier = modifier.fillMaxWidth().animateContentSize(),
+        color = CardBg,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, CardBorder),
+        tonalElevation = 2.dp,
+    ) {
         Column(Modifier.padding(16.dp)) {
             if (title.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -153,7 +361,7 @@ fun EffectToggle(label: String, icon: ImageVector, checked: Boolean, switchColor
             Spacer(Modifier.width(10.dp))
             Text(label, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             Switch(checked = checked, onCheckedChange = onToggle, colors = SwitchDefaults.colors(
-                checkedTrackColor = switchColor, checkedThumbColor = Color.White, uncheckedTrackColor = SurfaceDark, uncheckedBorderColor = CardBorder))
+                checkedTrackColor = switchColor, checkedThumbColor = OnPrimary, uncheckedTrackColor = SurfaceDark, uncheckedBorderColor = CardBorder))
         }
     }
 }
@@ -165,8 +373,12 @@ fun EffectToggle(label: String, icon: ImageVector, checked: Boolean, switchColor
 @Composable
 fun VoiceCard(name: String, label: String, gender: VoiceGender, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val gc = when (gender) { VoiceGender.Male -> Cyan; VoiceGender.Female -> Rose; VoiceGender.Neutral -> Purple }
-    Surface(modifier = modifier.clickable { onClick() }, color = if (isSelected) Purple.copy(0.08f) else CardBg.copy(0.65f),
-        shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, if (isSelected) Purple.copy(0.4f) else Purple.copy(0.07f))) {
+    Surface(modifier = modifier
+        .clickable { onClick() }
+        .animateItemPlacement(animationSpec = tween(300)),
+        color = if (isSelected) Purple.copy(0.08f) else CardBg.copy(0.65f),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, if (isSelected) Purple.copy(0.4f) else Purple.copy(0.07f))) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(gc.copy(0.1f)).border(1.dp, gc.copy(0.18f), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
                 Text(label.take(2).uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = gc)
@@ -189,7 +401,7 @@ fun VoiceTabRow(tabs: List<Pair<String, String>>, selectedTab: String, onTabSele
             Surface(modifier = Modifier.weight(1f).clickable { onTabSelected(id) }, color = if (sel) Purple.copy(0.12f) else SurfaceDark.copy(0.65f),
                 shape = RoundedCornerShape(11.dp), border = BorderStroke(1.dp, if (sel) Purple.copy(0.35f) else Purple.copy(0.12f))) {
                 Text(label, modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(), textAlign = TextAlign.Center,
-                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (sel) Color.White else TextMid)
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (sel) OnPrimary else TextMid)
             }
         }
     }
@@ -211,10 +423,13 @@ fun PositionSelector(selected: String, onSelect: (String) -> Unit) {
 
 @Composable
 private fun PosChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(modifier = modifier.clickable { onClick() }, color = if (selected) Purple.copy(0.15f) else Color.Transparent,
-        shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, if (selected) Purple.copy(0.4f) else CardBorder)) {
+    val bg = if (selected) Purple.copy(0.15f) else Color.Transparent
+    val borderClr = if (selected) Purple.copy(0.4f) else CardBorder
+    val txtClr = if (selected) Purple else TextDim
+    Surface(modifier = modifier.clickable { onClick() }, color = bg,
+        shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, borderClr)) {
         Text(label, modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth(), textAlign = TextAlign.Center,
-            fontSize = 14.sp, color = if (selected) Purple else TextDim, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+            fontSize = 14.sp, color = txtClr, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
     }
 }
 
@@ -252,11 +467,12 @@ fun VideoPreviewPlayer(
     }
 
     Box(
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
             .aspectRatio(videoRatio, matchHeightConstraintsFirst = false)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Color.Black)
-            .onSizeChanged { containerSize = it }
+            .onSizeChanged { containerSize = it },
     ) {
         AndroidView(
             factory = { PlayerView(it).apply { this.player = player; useController = true } },
@@ -288,7 +504,6 @@ fun DraggableBox(
     var boxW by remember { mutableFloatStateOf(initialW * containerSize.width) }
     var boxH by remember { mutableFloatStateOf(initialH * containerSize.height) }
 
-    // Update when container size changes
     LaunchedEffect(containerSize) {
         if (containerSize.width > 0) {
             offsetX = initialX * containerSize.width
@@ -324,15 +539,13 @@ fun DraggableBox(
                 }
             }
     ) {
-        // Label
         Text(label, color = borderColor, fontSize = 9.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.align(Alignment.TopStart).padding(2.dp))
 
-        // Remove button
         if (onRemove != null) {
             Box(
                 Modifier.align(Alignment.TopEnd).size(20.dp).offset(x = 8.dp, y = (-8).dp)
-                    .clip(CircleShape).background(Color.White).border(1.5.dp, borderColor, CircleShape)
+                    .clip(CircleShape).background(OnPrimary).border(1.5.dp, borderColor, CircleShape)
                     .clickable { onRemove() },
                 contentAlignment = Alignment.Center,
             ) {
@@ -340,10 +553,9 @@ fun DraggableBox(
             }
         }
 
-        // Resize handle
         Box(
             Modifier.align(Alignment.BottomEnd).size(18.dp).offset(x = 6.dp, y = 6.dp)
-                .clip(CircleShape).background(Color.White).border(1.5.dp, borderColor.copy(0.5f), CircleShape)
+                .clip(CircleShape).background(OnPrimary).border(1.5.dp, borderColor.copy(0.5f), CircleShape)
                 .pointerInput(Unit) {
                     detectDragGestures { change, dragAmount ->
                         change.consume()
@@ -362,7 +574,11 @@ fun DraggableBox(
 
 @Composable
 fun LoadingOverlay(visible: Boolean, message: String = "Processing...") {
-    AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(300)) + scaleIn(animationSpec = tween(300)),
+        exit = fadeOut(animationSpec = tween(200)),
+    ) {
         Box(Modifier.fillMaxSize().background(DarkBg.copy(0.85f)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(color = Purple, strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
@@ -374,7 +590,7 @@ fun LoadingOverlay(visible: Boolean, message: String = "Processing...") {
 }
 
 // ══════════════════════════════════
-// NEW: Chip Group (for selecting options)
+// CHIP GROUP (for selecting options)
 // ══════════════════════════════════
 
 @Composable
@@ -387,7 +603,6 @@ fun <T> OptionChipGroup(
     modifier: Modifier = Modifier,
     columns: Int = 3,
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
     LazyVerticalGrid(columns = GridCells.Fixed(columns), modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items(options.size) { i ->
             val opt = options[i]
@@ -398,9 +613,10 @@ fun <T> OptionChipGroup(
                 color = if (sel) Purple.copy(0.15f) else SurfaceDark,
                 shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(1.dp, if (sel) Purple.copy(0.4f) else CardBorder),
+                modifier = Modifier.animateItemPlacement(animationSpec = tween(300)),
             ) {
                 Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(label(opt), fontSize = 13.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, color = if (sel) Color.White else TextPrimary)
+                    Text(label(opt), fontSize = 13.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, color = if (sel) OnPrimary else TextPrimary)
                     if (premium) Text("Premium", fontSize = 9.sp, color = Gold)
                 }
             }
@@ -409,33 +625,43 @@ fun <T> OptionChipGroup(
 }
 
 // ══════════════════════════════════
-// NEW: Slider with live label
+// SLIDER WITH LIVE LABEL
 // ══════════════════════════════════
 
 @Composable
-fun SliderWithLabel(    value: Float, onValueChange: (Float) -> Unit, valueRange: ClosedFloatingPointRange<Float> = 0f..1f, label: String, color: Color = Purple) {
+fun SliderWithLabel(value: Float, onValueChange: (Float) -> Unit, valueRange: ClosedFloatingPointRange<Float> = 0f..1f, label: String, color: Color = Purple) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = TextDim, fontSize = 12.sp)
             Spacer(Modifier.weight(1f))
-                Text("${"%.0f".format(value)}%", color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("${"%.0f".format(value)}%", color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
-        Slider(value = value, onValueChange = onValueChange, valueRange = valueRange, colors = SliderDefaults.colors(thumbColor = color, activeTrackColor = color, inactiveTrackColor = CardBorder))
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            colors = SliderDefaults.colors(thumbColor = color, activeTrackColor = color, inactiveTrackColor = CardBorder),
+        )
     }
 }
 
 // ══════════════════════════════════
-// NEW: Circular Progress Card
+// CIRCULAR PROGRESS CARD
 // ══════════════════════════════════
 
 @Composable
 fun ProgressCard(visible: Boolean, progress: Float, status: String, elapsedSec: Long, modifier: Modifier = Modifier) {
-    AnimatedVisibility(visible) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(300)) + slideInVertically { it },
+        exit = fadeOut(animationSpec = tween(200)),
+    ) {
         Surface(
-            modifier = modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth().animateContentSize(),
             color = Purple.copy(0.08f),
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, Purple.copy(0.2f)),
+            tonalElevation = 4.dp,
         ) {
             Column(Modifier.padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -458,7 +684,7 @@ fun ProgressCard(visible: Boolean, progress: Float, status: String, elapsedSec: 
 }
 
 // ══════════════════════════════════
-// NEW: Empty State
+// EMPTY STATE
 // ══════════════════════════════════
 
 @Composable
@@ -473,14 +699,14 @@ fun EmptyState(icon: String, title: String, subtitle: String, modifier: Modifier
 }
 
 // ══════════════════════════════════
-// NEW: Video Info Bar
+// VIDEO INFO BAR
 // ══════════════════════════════════
 
 @Composable
 fun VideoInfoBar(durationSec: Int, resolution: String, fileSize: Long, modifier: Modifier = Modifier) {
     val mins = durationSec / 60
     val secs = durationSec % 60
-    Surface(color = SurfaceDark, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, CardBorder)) {
+    Surface(color = SurfaceDark, shape = MaterialTheme.shapes.small, border = BorderStroke(1.dp, CardBorder)) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column { Text("Duration", color = TextDim, fontSize = 10.sp); Text("${mins}:${"%02d".format(secs)}", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
             Column { Text("Resolution", color = TextDim, fontSize = 10.sp); Text(resolution, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
@@ -490,38 +716,91 @@ fun VideoInfoBar(durationSec: Int, resolution: String, fileSize: Long, modifier:
 }
 
 // ══════════════════════════════════
-// NEW: Action Button (FAB style)
+// ACTION BUTTON (FAB style)
 // ══════════════════════════════════
 
 @Composable
 fun ActionButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, color: Color = Emerald, enabled: Boolean = true) {
     FloatingActionButton(onClick = onClick, containerColor = color, shape = RoundedCornerShape(16.dp), modifier = modifier, enabled = enabled) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
-            Text(label, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            Icon(icon, null, tint = OnPrimary, modifier = Modifier.size(20.dp))
+            Text(label, fontSize = 10.sp, color = OnPrimary, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 // ══════════════════════════════════
-// NEW: Modern Dialog
+// MODERN DIALOG
 // ══════════════════════════════════
 
 @Composable
 fun ModernDialog(title: String, message: String, confirmText: String = "OK", dismissText: String = "Cancel", onConfirm: () -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), tonalElevation = 8.dp) {
-            Column(Modifier.padding(24.dp).fillMaxWidth()) {
+        Surface(shape = MaterialTheme.shapes.large, color = CardBg, border = BorderStroke(1.dp, CardBorder), tonalElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(24.dp)) {
                 Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 Text(message, fontSize = 14.sp, color = TextMid)
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder)) { Text(dismissText, color = TextDim, fontSize = 14.sp) }
-                    Button(onClick = onConfirm, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Purple)) { Text(confirmText, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.small, border = BorderStroke(1.dp, CardBorder)) { Text(dismissText, color = TextDim, fontSize = 14.sp) }
+                    Button(onClick = onConfirm, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.small, colors = ButtonDefaults.buttonColors(containerColor = Purple, contentColor = OnPrimary)) { Text(confirmText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                 }
             }
         }
     }
 }
 
+// ══════════════════════════════════
+// ENHANCED CARD (elevated, tonal)
+// ══════════════════════════════════
+
+@Composable
+fun AppCard(
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = CardBg,
+    shape: Shape = MaterialTheme.shapes.medium,
+    border: BorderStroke = BorderStroke(1.dp, CardBorder),
+    tonalElevation: Dp = 2.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        color = backgroundColor,
+        shape = shape,
+        border = border,
+        tonalElevation = tonalElevation,
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            content()
+        }
+    }
+}
+
+// ══════════════════════════════════
+// PROGRESS INDICATORS — themed, consistent
+// ══════════════════════════════════
+
+@Composable
+fun AppCircularProgressIndicator(
+    modifier: Modifier = Modifier,
+    color: Color = Primary,
+    strokeWidth: Dp = 2.dp,
+) {
+    CircularProgressIndicator(modifier = modifier, color = color, strokeWidth = strokeWidth)
+}
+
+@Composable
+fun AppLinearProgressIndicator(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    color: Color = Primary,
+    trackColor: Color = CardBorder,
+) {
+    LinearProgressIndicator(
+        progress = { progress },
+        modifier = modifier,
+        color = color,
+        trackColor = trackColor,
+    )
+}

@@ -1,5 +1,9 @@
 package com.recapmaker.app.ui.auth
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,10 +27,19 @@ fun LoginScreen(vm: AuthViewModel, onRegister: () -> Unit, onForgot: () -> Unit,
 
     Box(Modifier.fillMaxSize().background(DarkBg), contentAlignment = Alignment.Center) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("🎬", fontSize = 48.sp)
+            // Animated logo + title entrance
+            val fadeIn = tween(500)
+            val slideDelay = 100
+            AnimatedVisibility(visible = true, enter = androidx.compose.animation.fadeIn(fadeIn)) {
+                Text("🎬", fontSize = 48.sp)
+            }
             Spacer(Modifier.height(8.dp))
-            Text("Recap Maker", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Text("Video Editor & Subtitle Generator", fontSize = 13.sp, color = TextDim)
+            AnimatedVisibility(visible = true, enter = androidx.compose.animation.fadeIn(fadeIn) + androidx.compose.animation.slideInVertically(initialOffsetY = { -30 }) { slideDelay }) {
+                Text("Recap Maker", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+            AnimatedVisibility(visible = true, enter = androidx.compose.animation.fadeIn(fadeIn) + androidx.compose.animation.slideInVertically(initialOffsetY = { -20 }) { slideDelay + 100 }) {
+                Text("Video Editor & Subtitle Generator", fontSize = 13.sp, color = TextDim)
+            }
             Spacer(Modifier.height(32.dp))
             AppTextField(username, { username = it }, "Username or Email")
             Spacer(Modifier.height(12.dp))
@@ -45,3 +58,4 @@ fun LoginScreen(vm: AuthViewModel, onRegister: () -> Unit, onForgot: () -> Unit,
         }
     }
 }
+

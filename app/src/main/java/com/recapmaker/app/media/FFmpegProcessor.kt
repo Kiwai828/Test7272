@@ -26,7 +26,7 @@ object FFmpegProcessor {
         val flip: Boolean = false,
         val speed: Boolean = false,
         val pitch: Boolean = false,
-        val noise: Boolean = false,          // kept in model, silently ignored (not in LGPL build)
+        val noise: Boolean = false,          // Audio noise reduction via afftdn filter
         val blurAreas: List<BlurArea> = emptyList(),
         val logoPath: String? = null,
         val logoX: Int = 0, val logoY: Int = 0, val logoW: Int = 100, val logoH: Int = 100,
@@ -279,6 +279,10 @@ object FFmpegProcessor {
             // Volume control
             if (opts.volume != 1.0f) {
                 afParts.add("volume=${"%.2f".format(opts.volume)}")
+            }
+            // Noise reduction — afftdn is an LGPL-compatible FFmpeg audio denoise filter
+            if (opts.noise) {
+                afParts.add("afftdn=nr=14:nt=f")
             }
             // Audio effects
             when (opts.audioEffect) {

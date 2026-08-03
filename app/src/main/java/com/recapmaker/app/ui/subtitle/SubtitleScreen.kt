@@ -72,7 +72,8 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                             Text("Downloading... ${(s.downloadProgress * 100).toInt()}%", color = TextDim, fontSize = 11.sp)
                         }
                     }
-                    if (s.videoUri != null) { Spacer(Modifier.height(8.dp)); VideoPreviewPlayer(uri = s.videoUri!!) {} }
+                    val subVideoUri = s.videoUri
+                    if (subVideoUri != null) { Spacer(Modifier.height(8.dp)); VideoPreviewPlayer(uri = subVideoUri) {} }
                 }
 
                 SectionCard("Subtitle Style", Icons.Default.FormatSize, Purple) {
@@ -137,7 +138,8 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
     }
 
     // ═══ RESOLUTION POPUP ═══
-    if (s.showResolutionPopup && s.videoInfo != null) {
+    val subVideoInfo = s.videoInfo
+    if (s.showResolutionPopup && subVideoInfo != null) {
         Dialog(onDismissRequest = { vm.dismissResolutionPopup() }) {
             Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp)) {
@@ -145,8 +147,8 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                         Icon(Icons.Default.VideoFile, null, tint = Emerald, modifier = Modifier.size(28.dp))
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(s.videoInfo!!.title.take(60), fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp, maxLines = 2)
-                            if (s.videoInfo!!.duration > 0) Text("${s.videoInfo!!.duration / 60}:${"%02d".format(s.videoInfo!!.duration % 60)}", color = TextDim, fontSize = 12.sp)
+                            Text(subVideoInfo.title.take(60), fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp, maxLines = 2)
+                            if (subVideoInfo.duration > 0) Text("${subVideoInfo.duration / 60}:${"%02d".format(subVideoInfo.duration % 60)}", color = TextDim, fontSize = 12.sp)
                         }
                         IconButton(onClick = { vm.dismissResolutionPopup() }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, tint = TextDim, modifier = Modifier.size(18.dp)) }
                     }
@@ -154,7 +156,7 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                     Text("Resolution ရွေးပါ", color = TextDim, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                     LazyColumn(modifier = Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(s.videoInfo!!.formats) { fmt ->
+                        items(subVideoInfo.formats) { fmt ->
                             Surface(onClick = { vm.downloadWithFormat(ctx, fmt) }, color = if (fmt.formatId == "best") Emerald.copy(0.15f) else SurfaceDark,
                                 shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, if (fmt.formatId == "best") Emerald.copy(0.3f) else CardBorder)) {
                                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {

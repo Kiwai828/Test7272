@@ -376,7 +376,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     /** True if any coin-costing feature is enabled */
     val premiumCostText: String get() {
         val extras = mutableListOf<String>()
-        if (state.selectedResolution != null) extras.add("Res ${state.selectedResolution!!.label}")
+        state.selectedResolution?.let { extras.add("Res ${it.label}") }
         if (state.selectedSpeed != 1.0f) extras.add("Speed ${state.selectedSpeed}x")
         if (state.selectedFilter != VideoFilter.NONE) extras.add(state.selectedFilter.label)
         if (state.selectedAspectRatio != AspectRatio.ORIGINAL) extras.add("AR ${state.selectedAspectRatio.label}")

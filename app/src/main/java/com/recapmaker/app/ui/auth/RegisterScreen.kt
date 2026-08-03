@@ -1,5 +1,7 @@
-package com.recapmaker.app.ui.auth
-
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -28,10 +30,13 @@ fun RegisterScreen(vm: AuthViewModel, onLogin: () -> Unit, onSuccess: () -> Unit
 
     Box(Modifier.fillMaxSize().background(DarkBg), contentAlignment = Alignment.Center) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(48.dp))
-            Text("🎬", fontSize = 48.sp)
+            AnimatedVisibility(visible = true, enter = androidx.compose.animation.fadeIn(tween(500))) {
+                Text("🎬", fontSize = 48.sp)
+            }
             Spacer(Modifier.height(8.dp))
-            Text("Create Account", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            AnimatedVisibility(visible = true, enter = androidx.compose.animation.fadeIn(tween(500)) + androidx.compose.animation.slideInVertically { -20 }) {
+                Text("Create Account", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
             Spacer(Modifier.height(24.dp))
             AppTextField(username, { username = it }, "Username")
             Spacer(Modifier.height(12.dp))

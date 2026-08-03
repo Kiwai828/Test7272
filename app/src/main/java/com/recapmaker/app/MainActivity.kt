@@ -12,14 +12,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -36,7 +36,6 @@ import com.recapmaker.app.ui.subtitle.SubtitleScreen
 import com.recapmaker.app.ui.subtitle.SubtitleViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
-import kotlin.math.min
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -57,6 +56,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainNavHost(tokenManager: TokenManager) {
     val nav = rememberNavController()
+    val scope = rememberCoroutineScope()
     var startDestination by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -84,7 +84,7 @@ fun MainNavHost(tokenManager: TokenManager) {
     val fadeIn = tween(300)
     val fadeOut = tween(200)
 
-    NavHost(nav, startDestination = startDestination!!) {
+    NavHost(nav, startDestination = startDestination ?: "login") {
 
         composable("login", enterTransition = { fadeIn }, exitTransition = { fadeOut }, popEnterTransition = { fadeIn }) {
             val vm: AuthViewModel = hiltViewModel()
@@ -115,7 +115,7 @@ fun MainNavHost(tokenManager: TokenManager) {
                 onSubtitle = { nav.navigate("subtitle") },
                 onSettings = { nav.navigate("settings") },
                 onLogout = {
-                    lifecycleScope.launch { tokenManager.clear() }
+                    scope.launch { tokenManager.clear() }
                     nav.navigate("login") { popUpTo(0) { inclusive = true } }
                 },
             )
@@ -139,8 +139,9 @@ fun MainNavHost(tokenManager: TokenManager) {
                 email = dashVm.state.email,
                 vm = authVm,
                 onBack = { nav.popBackStack() },
+                onRefresh = { dashVm.loadUserInfo() },
                 onLogout = {
-                    lifecycleScope.launch { tokenManager.clear() }
+                    scope.launch { tokenManager.clear() }
                     nav.navigate("login") { popUpTo(0) { inclusive = true } }
                 },
             )

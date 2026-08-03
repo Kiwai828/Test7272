@@ -20,6 +20,7 @@ data class AuthUiState(
     val passwordReset: Boolean = false,
     // Settings dialogs
     val linkEmailDone: Boolean = false,
+    val linkedEmail: String? = null,
     val changePasswordDone: Boolean = false,
 )
 
@@ -81,7 +82,7 @@ class AuthViewModel @Inject constructor(private val repo: AuthRepository) : View
         viewModelScope.launch {
             state = state.copy(isLoading = true, error = null)
             when (val r = repo.linkEmail(email)) {
-                is Result.Success -> state = state.copy(isLoading = false, linkEmailDone = true)
+                is Result.Success -> state = state.copy(isLoading = false, linkEmailDone = true, linkedEmail = email)
                 is Result.Error -> state = state.copy(isLoading = false, error = r.message)
             }
         }

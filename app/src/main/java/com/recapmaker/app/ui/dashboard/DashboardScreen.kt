@@ -37,6 +37,11 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
             }
             CoinBadge(s.gold, s.silver)
             Spacer(Modifier.width(8.dp))
+            if (s.isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Purple, strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = { vm.loadUserInfo() }) { Icon(Icons.Default.Refresh, null, tint = TextDim) }
+            }
             IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, null, tint = TextDim) }
         }
 

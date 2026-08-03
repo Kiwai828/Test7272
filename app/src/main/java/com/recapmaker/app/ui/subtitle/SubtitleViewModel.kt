@@ -186,8 +186,10 @@ class SubtitleViewModel @Inject constructor(
             val outputFile = File(outDir, "subbed_${System.currentTimeMillis()}.mp4")
             FFmpegKitConfig.setFontDirectory(context, "/system/fonts", mapOf())
             val fontFile = findFontFile(context) ?: "/system/fonts/Roboto-Regular.ttf"
-            val fontParam = "fontfile=$fontFile:force_style='FontSize=${state.fontSize.toInt()},PrimaryColor=&H${colorToSrtHex(state.fontColor)}'"
-            val vf = if (state.boxEnabled) "subtitles=${srtFile.absolutePath}:$fontParam" else "subtitles=${srtFile.absolutePath}:$fontParam"
+            val fsStyle = "FontSize=${state.fontSize.toInt()},PrimaryColor=&H${colorToSrtHex(state.fontColor)}" +
+                (if (state.boxEnabled) ",BackColour=&H80000000" else "")
+            val fontParam = "fontfile=$fontFile:force_style='$fsStyle'"
+            val vf = "subtitles=${srtFile.absolutePath}:$fontParam"
             val cmd = "-i $inputPath -vf \"$vf\" -c:a copy -c:v mpeg4 -q:v 2 -y ${outputFile.absolutePath}"
             val session = FFmpegKit.execute(cmd)
             srtFile.delete()
@@ -259,5 +261,4 @@ class SubtitleViewModel @Inject constructor(
 
     fun clearError() { state = state.copy(error = null) }
     fun clearSuccess() { state = state.copy(success = null) }
-}
 }

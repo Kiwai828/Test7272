@@ -68,7 +68,8 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         Button({ vm.checkUrlInfo(ctx) }, modifier = Modifier.height(56.dp), enabled = s.urlInput.isNotBlank() && !s.isDownloading && !s.isCheckingUrl, shape = RoundedCornerShape(0.dp, 12.dp, 12.dp, 0.dp), colors = ButtonDefaults.buttonColors(containerColor = Purple)) { if (s.isDownloading || s.isCheckingUrl) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.Download, null) }
                     }
                     AnimatedVisibility(s.isDownloading) { Column(Modifier.padding(top = 8.dp)) { LinearProgressIndicator(progress = { s.downloadProgress }, Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = Purple, trackColor = CardBorder); Text("Downloading... ${(s.downloadProgress * 100).toInt()}%", color = TextDim, fontSize = 11.sp) } }
-                    if (s.videoUri != null) { Spacer(Modifier.height(8.dp)); VideoPreviewPlayer(uri = s.videoUri!!) { cs -> vm.updatePreviewSize(cs.width, cs.height); if (s.blurEnabled) s.blurAreas.forEachIndexed { i, _ -> DraggableBox(cs, .1f+i*.08f, .1f+i*.08f, .3f, .2f, Rose, "Blur ${i+1}", { vm.removeBlurBox(i) }) { vm.updateBlurBox(i, it) } }; if (s.logoUri != null) DraggableBox(cs, .05f, .05f, .15f, .15f, Emerald, "Logo") { vm.updateLogoArea(it) } }; if (s.videoDuration > 0) Text("Duration: ${s.videoDuration/60}:${"%02d".format(s.videoDuration%60)} • ${s.videoWidth}x${s.videoHeight}", color = Emerald, fontSize = 11.sp) }
+                    val videoUri = s.videoUri
+                    if (videoUri != null) { Spacer(Modifier.height(8.dp)); VideoPreviewPlayer(uri = videoUri) { cs -> vm.updatePreviewSize(cs.width, cs.height); if (s.blurEnabled) s.blurAreas.forEachIndexed { i, _ -> DraggableBox(cs, .1f+i*.08f, .1f+i*.08f, .3f, .2f, Rose, "Blur ${i+1}", { vm.removeBlurBox(i) }) { vm.updateBlurBox(i, it) } }; if (s.logoUri != null) DraggableBox(cs, .05f, .05f, .15f, .15f, Emerald, "Logo") { vm.updateLogoArea(it) } }; if (s.videoDuration > 0) Text("Duration: ${s.videoDuration/60}:${"%02d".format(s.videoDuration%60)} • ${s.videoWidth}x${s.videoHeight}", color = Emerald, fontSize = 11.sp) }
                 }
 
                 // ═══ 2. EFFECTS ═══
@@ -251,7 +252,8 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     }
 
     // ═══ RESOLUTION POPUP ═══
-    if (s.showResolutionPopup && s.videoInfo != null) {
+    val popupInfo = s.videoInfo
+    if (s.showResolutionPopup && popupInfo != null) {
         Dialog(onDismissRequest = { vm.dismissResolutionPopup() }) {
             Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp)) {
@@ -259,15 +261,15 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         Icon(Icons.Default.VideoFile, null, modifier = Modifier.size(28.dp), tint = Purple)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(s.videoInfo!!.title.take(60), fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp, maxLines = 2)
-                            if (s.videoInfo!!.duration > 0) Text("${s.videoInfo!!.duration/60}:${"%02d".format(s.videoInfo!!.duration%60)}", color = TextDim, fontSize = 12.sp)
+                            Text(popupInfo.title.take(60), fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp, maxLines = 2)
+                            if (popupInfo.duration > 0) Text("${popupInfo.duration/60}:${"%02d".format(popupInfo.duration%60)}", color = TextDim, fontSize = 12.sp)
                         }
                         IconButton(onClick = { vm.dismissResolutionPopup() }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = TextDim) }
                     }
                     Spacer(Modifier.height(12.dp)); Text("Resolution ရွေးပါ", color = TextDim, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                     LazyColumn(Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(s.videoInfo!!.formats) { f ->
+                        items(popupInfo.formats) { f ->
                             Surface(onClick = { vm.downloadWithFormat(ctx, f) }, color = if (f.formatId == "best") Purple.copy(.15f) else SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, if (f.formatId == "best") Purple.copy(.3f) else CardBorder)) {
                                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(if (f.formatId == "best") Icons.Default.AutoAwesome else Icons.Default.HighQuality, null, modifier = Modifier.size(20.dp), tint = if (f.formatId == "best") Purple else Emerald)
