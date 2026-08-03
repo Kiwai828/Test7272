@@ -22,7 +22,7 @@ object FFmpegProcessor {
         val flip: Boolean = false,
         val speed: Boolean = false,
         val pitch: Boolean = false,
-        val noise: Boolean = false,          // kept in model, silently ignored (not in LGPL build)
+        val noise: Boolean = false,
         val blurAreas: List<BlurArea> = emptyList(),
         val logoPath: String? = null,
         val logoX: Int = 0, val logoY: Int = 0, val logoW: Int = 100, val logoH: Int = 100,
@@ -37,6 +37,21 @@ object FFmpegProcessor {
         val videoDurationSec: Int = 0,
         val videoWidth: Int = 0, val videoHeight: Int = 0,
         val previewWidth: Int = 0, val previewHeight: Int = 0,
+        val videoEffects: VideoEffectsState = VideoEffectsState(),
+        val bgMusicPath: String? = null, val bgMusicVolume: Float = 0.3f, val autoDuck: Boolean = true,
+        val audioEffects: AudioEffectsState = AudioEffectsState(),
+        val extraClips: List<String> = emptyList(),
+        val subtitlePath: String? = null,
+    )
+
+    data class VideoEffectsState(
+        val grayscale: Boolean = false, val sepia: Boolean = false, val vignette: Boolean = false,
+        val brightness: Float = 1.0f, val contrast: Float = 1.0f,
+    )
+
+    data class AudioEffectsState(
+        val echo: Boolean = false, val reverb: Boolean = false, val bassBoost: Boolean = false,
+        val echoDelay: Float = 60f, val echoDecay: Float = 0.4f, val reverbAmount: Float = 0.3f, val bassAmount: Float = 3f,
     )
 
     data class ProcessResult(
@@ -115,6 +130,14 @@ object FFmpegProcessor {
             else audioPath
         }
 
+    suspend fun autoDuckAudio(bgMusicPath: String, mainAudioPath: String, context: Context): String? =
+        withContext(Dispatchers.IO) {
+            val out = File(context.cacheDir, "bg_ducked_${System.currentTimeMillis()}.mp3")
+            val cmd = "-i $bgMusicPath -i $mainAudioPath -filter_complex [1:a]asplit=2[main][sidechain];[sidechain]sidechaincompress=threshold=0.1:ratio=20:attack=1000:release=2000[compressed];[0:a][compressed]amix=inputs=2:duration=first:dropout_transition=3 -c:a aac -b:a 192k -y ${out.absolutePath}"
+            val session = FFmpegKit.execute(cmd)
+            if (ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0) out.absolutePath else null
+        }
+
     // ─────────────────────────────────────────
     // Main process — always mpeg4 (stable LGPL)
     // h264_mediacodec breaks with filter_complex
@@ -127,14 +150,14 @@ object FFmpegProcessor {
                 return@withContext ProcessResult(false, error = "Input video file not found")
             }
 
-            // Register fonts before any drawtext command
             if (options.watermarkText.isNotBlank()) {
                 setupFonts(context)
             }
 
             val outFile = File(context.cacheDir, "processed_${System.currentTimeMillis()}.mp4")
             try {
-                val cmd = buildCommand(inputPath, outFile.absolutePath, options, context, inputPath)
+                val cmd = if (options.extraClips.isNotEmpty()) buildMultiClipCommand(inputPath, outFile.absolutePath, options, context)
+                else buildCommand(inputPath, outFile.absolutePath, options, context, inputPath)
                 Log.d(TAG, "CMD: $cmd")
                 val session = FFmpegKit.execute(cmd)
 
@@ -144,10 +167,9 @@ object FFmpegProcessor {
                     val logs = session.allLogsAsString ?: "Unknown error"
                     Log.e(TAG, "FAIL logs:\n${logs.takeLast(2000)}")
                     outFile.delete()
-                    // Extract meaningful error message
                     val errLine = logs.lines().lastOrNull {
                         it.contains("Error") || it.contains("Invalid") || it.contains("Cannot") ||
-                        it.contains("No such") || it.contains("Conversion failed")
+                            it.contains("No such") || it.contains("Conversion failed")
                     } ?: logs.lines().lastOrNull { it.isNotBlank() } ?: "Processing failed"
                     ProcessResult(false, error = errLine.trim())
                 }
@@ -156,6 +178,56 @@ object FFmpegProcessor {
                 ProcessResult(false, error = e.message ?: "Exception")
             }
         }
+
+    // ─────────────────────────────────────────
+    // Multi-clip joiner with fade transitions
+    // ─────────────────────────────────────────
+    private fun buildMultiClipCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input): String {
+        val allClips = listOf(input) + opts.extraClips.filter { File(it).exists() }
+        if (allClips.size < 2) return buildCommand(input, output, opts, context, originalPath)
+
+        val fadeDur = 0.5
+        val sb = StringBuilder()
+        allClips.forEachIndexed { i, clip ->
+            sb.append("-i $clip ")
+        }
+
+        val filterParts = mutableListOf<String>()
+        val labelMap = mutableMapOf<Int, String>()
+        allClips.forEachIndexed { i, _ ->
+            labelMap[i] = "[$i:v]"
+        }
+
+        if (allClips.size == 2) {
+            filterParts.add("${labelMap[0]}xfade=transition=fade:duration=$fadeDur:offset=3[vout]")
+        } else {
+            var prev = "[0:v]"
+            for (i in 1 until allClips.size) {
+                val offset = (i * 3.0)
+                filterParts.add("${prev}[${labelMap[i].substringAfter('[').substringBefore(']')}:v]xfade=transition=fade:duration=$fadeDur:offset=$offset[xf$i]")
+                prev = "[xf$i]"
+            }
+            filterParts.add("$prev[vout]")
+        }
+
+        val audioChain = StringBuilder()
+        val audioParts = mutableListOf<String>()
+        if (opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()) {
+            audioParts.add("[${allClips.size}:a]")
+        }
+        allClips.forEachIndexed { i, _ ->
+            if (i > 0) audioParts.add("[$i:a]")
+        }
+        if (audioParts.isNotEmpty()) {
+            audioChain.append("${audioParts.joinToString("")}amix=inputs=${audioParts.size}:duration=first[aout]")
+            filterParts.add(audioChain.toString())
+        }
+
+        val origKbps = getVideoBitrateKbps(originalPath)
+        val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
+        val filterStr = filterParts.joinToString(";")
+        return "${sb}-filter_complex $filterStr -map [vout] -map [aout] -c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart -y $output"
+    }
 
     // ─────────────────────────────────────────
     // Command builder
@@ -169,6 +241,8 @@ object FFmpegProcessor {
     private fun buildCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input): String {
         val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
         val hasTts  = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
+        val hasBgMusic = opts.bgMusicPath != null && File(opts.bgMusicPath).exists()
+        val hasSubtitle = opts.subtitlePath != null && File(opts.subtitlePath).exists()
 
         val scX = if (opts.previewWidth  > 0 && opts.videoWidth  > 0) opts.videoWidth.toFloat()  / opts.previewWidth  else 1f
         val scY = if (opts.previewHeight > 0 && opts.videoHeight > 0) opts.videoHeight.toFloat() / opts.previewHeight else 1f
@@ -178,6 +252,13 @@ object FFmpegProcessor {
         // ── Video filter parts ──
         val vfParts = mutableListOf<String>()
         if (opts.flip)  vfParts.add("hflip")
+
+        val ve = opts.videoEffects
+        if (ve.grayscale) vfParts.add("colorchannelmixer=aa=0:aa=0:aa=0")
+        if (ve.sepia) vfParts.add("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
+        if (ve.vignette) vfParts.add("vignette=PI/4")
+        if (ve.brightness != 1.0f) vfParts.add("eq=brightness=${"%.2f".format((ve.brightness - 1).coerceIn(-0.5f, 0.5f))}")
+        if (ve.contrast != 1.0f) vfParts.add("eq=contrast=${"%.2f".format(ve.contrast.coerceIn(0.5f, 2.0f))}")
         if (opts.speed) vfParts.add("setpts=PTS/1.05")
 
         for (a in opts.blurAreas) {
@@ -189,7 +270,6 @@ object FFmpegProcessor {
         }
 
         if (opts.watermarkText.isNotBlank()) {
-            // Sanitize text — remove all chars that break drawtext filter syntax
             val safe = opts.watermarkText
                 .replace("\\", "").replace("'", "").replace("\"", "")
                 .replace(":", " ").replace("%", "").replace(";", "")
@@ -197,31 +277,39 @@ object FFmpegProcessor {
                 .trim()
 
             if (safe.isNotBlank()) {
-                // Find a real font file for drawtext — required on Android
                 val fontFile = findFontFile(context)
                 val fontParam = if (fontFile != null) "fontfile=$fontFile:" else ""
 
                 val wmColor = "0x${opts.watermarkColor.removePrefix("#")}"
                 val (px, py) = posXY(opts.watermarkPosition)
-                // Scroll: mod uses \, which in FFmpegKit direct-arg needs single backslash
                 val wmX = if (opts.watermarkScroll) "mod(t*60\\,w+text_w)-text_w" else px
                 val wmBoxStr = if (opts.watermarkBox)
                     ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
-                // drawtext in filter_complex: text value must NOT use shell quotes
-                // Use fontfile= so Android can find the font without fontconfig
                 vfParts.add("drawtext=${fontParam}text=$safe:fontsize=${opts.watermarkSize}:fontcolor=$wmColor:x=$wmX:y=$py$wmBoxStr")
             }
         }
 
+        if (hasSubtitle) {
+            val escapedSubPath = opts.subtitlePath!!.replace("\\", "/").replace(":", "\\:")
+            vfParts.add("subtitles='$escapedSubPath':force_style='FontSize=${opts.watermarkSize.coerceIn(10, 32)},PrimaryColour=&H${opts.watermarkColor.removePrefix("#")},Alignment=2'")
+        }
+
         // ── Audio filter parts ──
         val afParts = mutableListOf<String>()
+        val ae = opts.audioEffects
+        if (ae.echo) afParts.add("aecho=0.8:0.9:${ae.echoDelay.toInt()}:${"%.1f".format(ae.echoDecay)}")
+        if (ae.reverb) afParts.add("aecho=1.0:0.8:40:${"%.1f".format(ae.reverbAmount)}|0.8:0.9:60:0.25")
+        if (ae.bassBoost) afParts.add("bass=g=${ae.bassAmount.toInt()}")
         if (!hasTts) {
             if (opts.speed) afParts.add("atempo=1.05")
             if (opts.pitch) { afParts.add("asetrate=44100*0.94"); afParts.add("aresample=44100") }
         }
 
-        // ── Nothing to do → stream copy ──
-        if (vfParts.isEmpty() && afParts.isEmpty() && !hasLogo && !hasTts) {
+        val hasAnyAudioFilter = afParts.isNotEmpty()
+        val hasAnyVideoFilter = vfParts.isNotEmpty()
+        val hasAnyFilter = hasAnyVideoFilter || hasAnyAudioFilter || hasLogo || hasTts || hasBgMusic || hasSubtitle
+
+        if (!hasAnyFilter) {
             return "-i $input -c copy -y $output"
         }
 
@@ -230,11 +318,9 @@ object FFmpegProcessor {
         var inputIdx = 1
         val logoIdx = if (hasLogo) { sb.append("-i ${opts.logoPath} "); val i = inputIdx; inputIdx++; i } else -1
         val ttsIdx  = if (hasTts)  { sb.append("-i ${opts.ttsAudioPath} "); val i = inputIdx; inputIdx++; i } else -1
+        val bgIdx = if (hasBgMusic) { sb.append("-i ${opts.bgMusicPath} "); val i = inputIdx; inputIdx++; i } else -1
 
-        // ── Decide strategy ──
-        // Strategy A (filter_complex): logo present OR audio filters needed
-        // Strategy B (simple -vf / -af): video-only filters, no logo
-        val needFilterComplex = hasLogo || afParts.isNotEmpty()
+        val needFilterComplex = hasLogo || hasAnyAudioFilter || hasBgMusic || hasSubtitle || (hasTts && hasAnyVideoFilter)
 
         if (needFilterComplex) {
             val fc = StringBuilder()
@@ -257,36 +343,51 @@ object FFmpegProcessor {
                 if (vfParts.isNotEmpty()) {
                     fc.append("[0:v]${vfParts.joinToString(",")}[vout]")
                 } else {
-                    // No video filter needed — still need filter_complex for audio
                     fc.append("[0:v]null[vout]")
                 }
             }
 
-            // Audio chain in filter_complex
-            val audioSrc = if (hasTts) "$ttsIdx:a" else "0:a"
-            if (afParts.isNotEmpty()) {
-                fc.append(";[$audioSrc]${afParts.joinToString(",")}[aout]")
-                sb.append("-filter_complex $fc ")
-                sb.append("-map [vout] -map [aout] ")
+            // Audio chain
+            if (hasTts || hasBgMusic || hasAnyAudioFilter) {
+                val audioSrcs = mutableListOf<String>()
+                if (hasTts) audioSrcs.add("$ttsIdx:a")
+                else if (hasBgMusic) audioSrcs.add("0:a?")
+                else audioSrcs.add("0:a?")
+
+                if (hasBgMusic) {
+                    val bgVol = "%.2f".format(opts.bgMusicVolume)
+                    if (opts.autoDuck && hasTts) {
+                        audioSrcs.add("[$bgIdx:a]volume=$bgVol[bg]")
+                        fc.append(";[bg][$ttsIdx:a]sidechaincompress=threshold=0.1:ratio=20:attack=1000:release=2000[mixed]")
+                    } else {
+                        audioSrcs.add("[$bgIdx:a]volume=$bgVol[bg]")
+                    }
+                }
+
+                val finalAudioSrc = if (opts.autoDuck && hasTts && hasBgMusic) "[mixed]" else if (hasBgMusic) "[bg]" else if (hasTts) "$ttsIdx:a" else "0:a"
+                if (afParts.isNotEmpty()) {
+                    fc.append(";$finalAudioSrc${afParts.joinToString(",")}[aout]")
+                    sb.append("-filter_complex $fc ")
+                    sb.append("-map [vout] -map [aout] ")
+                } else {
+                    sb.append("-filter_complex $fc ")
+                    sb.append("-map [vout] ")
+                    sb.append("-map $finalAudioSrc ")
+                }
             } else {
                 sb.append("-filter_complex $fc ")
                 sb.append("-map [vout] ")
-                if (hasTts) sb.append("-map $ttsIdx:a ") else sb.append("-map 0:a? ")
+                sb.append("-map 0:a? ")
             }
         } else {
             // Strategy B: simple -vf (no filter_complex), no logo
             if (vfParts.isNotEmpty()) sb.append("-vf ${vfParts.joinToString(",")} ")
-            // -map not needed with -vf alone; add audio map
             if (hasTts) sb.append("-map 0:v -map $ttsIdx:a ") else sb.append("-map 0:v -map 0:a? ")
         }
 
         val shortestFlag = if (hasTts) "-shortest " else ""
-        // Match original video bitrate to preserve quality
-        // MediaMetadataRetriever gives total bitrate; subtract audio to get video bitrate
         val origKbps = getVideoBitrateKbps(originalPath)
         val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
-        Log.d(TAG, "Original bitrate: ${origKbps}kbps → target: ${targetKbps}kbps")
-        // -q:v 1 = best mpeg4 quality (1-31, lower=better); -b:v ensures we match original
         sb.append("-c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart $shortestFlag-y $output")
         return sb.toString()
     }

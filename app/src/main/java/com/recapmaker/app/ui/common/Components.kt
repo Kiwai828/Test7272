@@ -17,7 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -34,13 +37,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import com.recapmaker.app.data.model.BlurArea
-import com.recapmaker.app.data.model.VoiceGender
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
 
 // ══════════════════════════════════
 // TEXT FIELDS
@@ -83,7 +83,9 @@ fun PasswordField(
 
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, loading: Boolean = false, modifier: Modifier = Modifier, color: Color = Purple, enabled: Boolean = true) {
-    Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(50.dp), enabled = !loading && enabled,
+    var pressed by remember { mutableStateOf(false) }
+    val scale = if (pressed && !loading && enabled) 0.96f else 1f
+    Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(50.dp).scale(scale).pointerInput(Unit) { detectTapGestures(onPress = { pressed = true; it.press() }, onRelease = { pressed = false }) }, enabled = !loading && enabled,
         colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = color.copy(0.4f)), shape = RoundedCornerShape(12.dp)) {
         if (loading) CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
         else Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -349,6 +351,46 @@ fun DraggableBox(
                     }
                 },
         )
+    }
+}
+
+// ══════════════════════════════════
+// ANIMATION UTILITIES
+// ══════════════════════════════════
+
+@Composable
+fun ShimmerEffect(show: Boolean = true, modifier: Modifier = Modifier) {
+    if (!show) return
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val offset by transition.animateFloat(initialValue = -300f, targetValue = 300f, animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Reverse), label = "shimmerOffset")
+    Box(modifier = modifier.fillMaxSize()) {
+        Box(modifier = Modifier.offset(x = offset.dp).fillMaxHeight().width(120.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.08f), Color.Transparent), TileMode.Clamp)))
+    }
+}
+
+@Composable
+fun PulseGlow(color: Color, visible: Boolean = true, modifier: Modifier = Modifier) {
+    if (!visible) return
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val alpha by infiniteTransition.animateFloat(initialValue = 0.3f, targetValue = 0.8f, animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOut), RepeatMode.Reverse), label = "pulseAlpha")
+    Box(modifier = modifier.shadow(alpha * 24.dp, RoundedCornerShape(16.dp), spotColor = color.copy(alpha = alpha)))
+}
+
+@Composable
+fun AnimatedGradientBackground(modifier: Modifier = Modifier, enabled: Boolean = true) {
+    if (!enabled) { Box(modifier = modifier.background(DarkBg)); return }
+    val infiniteTransition = rememberInfiniteTransition(label = "gradient")
+    val rotation by infiniteTransition.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing), RepeatMode.Restart), label = "gradientRotation")
+    Box(modifier = modifier.background(Brush.sweepGradient(listOf(Purple.copy(0.15f), Emerald.copy(0.1f), PurpleDark.copy(0.12f), Color.Transparent), Alignment.Center).rotate(rotation)))
+}
+
+@Composable
+fun ShimmerCard(modifier: Modifier = Modifier, shimmer: Boolean = true, content: @Composable BoxScope.() -> Unit) {
+    Box(modifier = modifier) {
+        Surface(color = CardBg, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
+            Box(Modifier.padding(16.dp), content = content)
+        }
+        if (shimmer) ShimmerEffect()
     }
 }
 

@@ -1,9 +1,15 @@
 package com.recapmaker.app.media
 
 import android.app.*
+import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -92,18 +98,18 @@ class VideoProcessService : Service() {
                     resultMessage = "✅ ပြီးပါပြီ! Movies/RecapMaker/ (${result.durationMs / 1000}s)"
 
                     outputFile.delete()
-                    showDoneNotification("✅ Video ပြီးပါပြီ!", "Movies/RecapMaker/ ထဲ သိမ်းပြီး")
+                    showDoneNotification("✅ Video ပြီးပါပြီ!", "Movies/RecapMaker/ ထဲ သိမ်းပြီး", true)
                     Log.d(TAG, "Success! Gallery URI: $galleryUri")
                 } else {
                     resultSuccess = false
                     resultMessage = result.error ?: "FFmpeg processing failed"
-                    showDoneNotification("❌ Process Failed", resultMessage?.take(100) ?: "")
+                    showDoneNotification("❌ Process Failed", resultMessage?.take(100) ?: "", false)
                     Log.e(TAG, "FFmpeg failed: ${result.error}")
                 }
             } catch (e: Exception) {
                 resultSuccess = false
                 resultMessage = "Service error: ${e.message}"
-                showDoneNotification("❌ Error", e.message?.take(100) ?: "Unknown error")
+                showDoneNotification("❌ Error", e.message?.take(100) ?: "Unknown error", false)
                 Log.e(TAG, "Exception in service", e)
             } finally {
                 currentStatus = ""
@@ -148,6 +154,23 @@ class VideoProcessService : Service() {
             .build()
     }
 
+    private fun playCompletionSound(success: Boolean) {
+        try {
+            val uri: Uri = if (success) RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            val rm = RingtoneManager.getRingtone(this, uri)
+            rm.audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+            rm.play()
+        } catch (_: Exception) {}
+    }
+
+    private fun vibrate(pattern: LongArray) {
+        try {
+            val vib = getSystemService(Vibrator::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vib.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            else @Suppress("DEPRECATION") vib.vibrate(pattern, -1)
+        } catch (_: Exception) {}
+    }
+
     private fun updateNotification(text: String) {
         try {
             val nm = getSystemService(NotificationManager::class.java)
@@ -157,16 +180,20 @@ class VideoProcessService : Service() {
         }
     }
 
-    private fun showDoneNotification(title: String, text: String) {
+    private fun showDoneNotification(title: String, text: String, success: Boolean) {
         try {
             val nm = getSystemService(NotificationManager::class.java)
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setSmallIcon(if (success) android.R.drawable.ic_dialog_info else android.R.drawable.ic_dialog_alert)
                 .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
                 .build()
             nm.notify(DONE_NOTIFICATION_ID, notification)
+            playCompletionSound(success)
+            if (success) vibrate(longArrayOf(0, 100, 50, 100)) else vibrate(longArrayOf(0, 200, 100, 200, 100, 200))
         } catch (e: Exception) {
             Log.w(TAG, "Done notification failed: ${e.message}")
         }

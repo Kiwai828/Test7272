@@ -36,8 +36,12 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onLogoSelected(it) } }
 
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().background(DarkBg)) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffset = { it / 4 }), exit = fadeOut()) {
+            Column(Modifier.fillMaxSize().background(DarkBg)) {
             Surface(color = CardBg, shadowElevation = 4.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary) }
@@ -130,6 +134,114 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     if (voices.isEmpty()) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { Text("Not found", color = TextDim) }
                     else LazyVerticalGrid(columns = GridCells.Fixed(2), Modifier.fillMaxWidth().heightIn(max = 260.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { items(voices, key = { it.name }) { v -> VoiceCard(v.name, v.label, v.gender, s.selectedVoice == v.name, { vm.selectVoice(v.name) }) } }
                     if (s.voiceTab == "google" && s.aiText.isNotBlank()) { Spacer(Modifier.height(4.dp)); Surface(color = WarningYellow.copy(.08f), shape = RoundedCornerShape(8.dp)) { Text("⚠ Google Voice → Gold Coins", color = WarningYellow, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) } }
+                    if (s.voiceTab == "microsoft" && s.edgeTtsAvailable) { Spacer(Modifier.height(4.dp)); Surface(color = Cyan.copy(.08f), shape = RoundedCornerShape(8.dp)) { Text("🔷 Edge TTS Local Mode", color = Cyan, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) } }
+                }
+
+                // ═══ 5-A. VIDEO EFFECTS ═══
+                val ve = s.videoEffects
+                SectionCard("Video Effects", Icons.Default.Tune, Purple) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EffectToggle("Grayscale", Icons.Default.BlurOn, ve.grayscale, Rose) { vm.setVideoEffectGrayscale(it) }
+                        EffectToggle("Sepia", Icons.Default.BlurOn, ve.sepia, Gold) { vm.setVideoEffectSepia(it) }
+                        EffectToggle("Vignette", Icons.Default.BlurOn, ve.vignette, Purple) { vm.setVideoEffectVignette(it) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Brightness", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                        Slider(ve.brightness, { vm.setVideoEffectBrightness(it) }, valueRange = 0.5f..1.5f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                        Text("${"%.1f".format(ve.brightness)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Contrast", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                        Slider(ve.contrast, { vm.setVideoEffectContrast(it) }, valueRange = 0.5f..2.0f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                        Text("${"%.1f".format(ve.contrast)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                    }
+                }
+
+                // ═══ 5-B. BACKGROUND MUSIC ═══
+                val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.setBgMusicUri(it) } }
+                SectionCard("Background Music", Icons.Default.MusicNote, Emerald) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton({ musicPicker.launch("audio/*") }, Modifier.weight(1f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f))) {
+                            Icon(if (s.bgMusicUri != null) Icons.Default.CheckCircle else Icons.Default.AudioFile, null, tint = if (s.bgMusicUri != null) Emerald else TextDim, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp)); Text(if (s.bgMusicUri != null) "Music added" else "Add music", fontSize = 12.sp, color = if (s.bgMusicUri != null) Emerald else TextDim)
+                        }
+                        if (s.bgMusicUri != null) { Spacer(Modifier.width(8.dp)); IconButton(onClick = { vm.setBgMusicUri(null) }) { Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(18.dp)) } }
+                    }
+                    if (s.bgMusicUri != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Volume", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                            Slider(s.bgMusicVolume, { vm.setBgMusicVolume(it) }, valueRange = 0f..1f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Emerald, activeTrackColor = Emerald))
+                            Text("${(s.bgMusicVolume * 100).toInt()}%", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                        }
+                        EffectToggle("Auto-Duck (lower when speaking)", Icons.Default.VolumeDown, s.autoDuck, Emerald) { vm.setAutoDuck(it) }
+                    }
+                }
+
+                // ═══ 5-C. AUDIO EFFECTS ═══
+                val ae = s.audioEffects
+                SectionCard("Audio Effects", Icons.Default.GraphicEq, Purple) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EffectToggle("Echo", Icons.Default.GraphicEq, ae.echo, Cyan) { vm.setAudioEffectEcho(it) }
+                        EffectToggle("Reverb", Icons.Default.GraphicEq, ae.reverb, Rose) { vm.setAudioEffectReverb(it) }
+                        EffectToggle("Bass Boost", Icons.Default.GraphicEq, ae.bassBoost, Gold) { vm.setAudioEffectBassBoost(it) }
+                    }
+                    AnimatedVisibility(ae.echo) {
+                        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Delay", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                                Slider(ae.echoDelay, { vm.setEchoDelay(it) }, valueRange = 10f..200f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan))
+                                Text("${ae.echoDelay.toInt()}ms", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(40.dp))
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Decay", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                                Slider(ae.echoDecay, { vm.setEchoDecay(it) }, valueRange = 0.1f..0.9f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan))
+                                Text("${"%.1f".format(ae.echoDecay)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                            }
+                        }
+                    }
+                    AnimatedVisibility(ae.reverb) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                            Text("Amount", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                            Slider(ae.reverbAmount, { vm.setReverbAmount(it) }, valueRange = 0.1f..0.8f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Rose, activeTrackColor = Rose))
+                            Text("${"%.1f".format(ae.reverbAmount)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                        }
+                    }
+                    AnimatedVisibility(ae.bassBoost) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                            Text("Gain", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                            Slider(ae.bassAmount, { vm.setBassAmount(it) }, valueRange = 1f..10f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
+                            Text("${ae.bassAmount.toInt()}dB", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                        }
+                    }
+                }
+
+                // ═══ 5-D. MULTI-CLIP ═══
+                SectionCard("Multi-Clip Joiner", Icons.Default.VideoLibrary, Emerald) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton({ val picker = androidx.activity.compose.ActivityResultRegistryPickVisualMedia(); picker.launch("video/*") { it?.let { vm.addExtraClip(it.toString()) } } }, Modifier.weight(1f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f))) {
+                            Icon(Icons.Default.Add, null, tint = Emerald, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Add clip (${s.extraClips.size})", fontSize = 12.sp, color = Emerald)
+                        }
+                    }
+                    if (s.extraClips.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Clips will be joined with fade transitions", color = TextDim, fontSize = 11.sp)
+                        s.extraClips.forEachIndexed { i, path ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+                                Text("Clip ${i + 1}: ${File(path).name}", color = TextMid, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                IconButton(onClick = { vm.removeExtraClip(path) }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, null, tint = ErrorRed, modifier = Modifier.size(14.dp)) }
+                            }
+                        }
+                    }
+                }
+
+                // ═══ 5-E. SUBTITLES ═══
+                SectionCard("SRT Subtitles", Icons.Default.Subtitles, Purple) {
+                    EffectToggle("Generate SRT from TTS", Icons.Default.Subtitles, s.subtitleEnabled, Purple) { vm.setSubtitleEnabled(it) }
+                    AnimatedVisibility(s.subtitleEnabled) {
+                        OutlinedTextField(s.subtitleText, { vm.setSubtitleText(it) }, Modifier.fillMaxWidth(), placeholder = { Text("SRT content or auto-generate from TTS", fontSize = 12.sp) }, maxLines = 6, shape = RoundedCornerShape(10.dp), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple))
+                    }
                 }
 
                 // ═══ 6. PROCESS ═══

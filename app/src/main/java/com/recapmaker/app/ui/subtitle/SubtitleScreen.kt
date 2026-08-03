@@ -31,8 +31,12 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
     val s = vm.state; val ctx = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
 
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().background(DarkBg)) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffset = { it / 4 }), exit = fadeOut()) {
+            Column(Modifier.fillMaxSize().background(DarkBg)) {
             Surface(color = CardBg, shadowElevation = 4.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary) }
