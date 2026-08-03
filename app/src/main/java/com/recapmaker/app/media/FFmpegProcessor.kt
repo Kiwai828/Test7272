@@ -44,6 +44,9 @@ object FFmpegProcessor {
         val subtitlePath: String? = null,
         val trimStartSec: Int = 0,
         val trimEndSec: Int = 0,
+        val outputQuality: String = "balanced",
+        val targetWidth: Int = 0,
+        val targetFps: Int = 0,
     )
 
     data class VideoEffectsState(
@@ -183,6 +186,16 @@ object FFmpegProcessor {
         }
 
     // ─────────────────────────────────────────
+    // Quality preset mapping
+    // ─────────────────────────────────────────
+    private fun qualityPreset(opts: ProcessOptions): Pair<Int, Int> = when (opts.outputQuality) {
+        "fast" -> 3 to 3000
+        "quality" -> 1 to 8000
+        "max" -> 0 to 15000
+        else -> 1 to 5000
+    }
+
+    // ─────────────────────────────────────────
     // Multi-clip joiner with fade transitions
     // ─────────────────────────────────────────
     private fun buildMultiClipCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input): String {
@@ -226,10 +239,13 @@ object FFmpegProcessor {
             filterParts.add(audioChain.toString())
         }
 
-        val origKbps = getVideoBitrateKbps(originalPath)
-        val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
+        val (qVal, targetKbps) = qualityPreset(opts)
+        val vfFilters = mutableListOf<String>()
+        if (opts.targetWidth > 0) vfFilters.add("scale=${opts.targetWidth}:-2")
+        if (opts.targetFps > 0) vfFilters.add("fps=${opts.targetFps}")
+        val vfScale = if (vfFilters.isNotEmpty()) "-vf ${vfFilters.joinToString(",")}" else ""
         val filterStr = filterParts.joinToString(";")
-        return "${sb}-filter_complex $filterStr -map [vout] -map [aout] -c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart -y $output"
+        return "${sb}-filter_complex $filterStr -map [vout] -map [aout] $vfScale -c:v mpeg4 -q:v $qVal -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart -y $output"
     }
 
     // ─────────────────────────────────────────
@@ -309,6 +325,9 @@ object FFmpegProcessor {
             vfParts.add("subtitles='$escapedSubPath':force_style='FontSize=${opts.watermarkSize.coerceIn(10, 32)},PrimaryColour=&H${opts.watermarkColor.removePrefix("#")},Alignment=2'")
         }
 
+        if (opts.targetWidth > 0) vfParts.add("scale=${opts.targetWidth}:-2")
+        if (opts.targetFps > 0) vfParts.add("fps=${opts.targetFps}")
+
         // ── Audio filter parts ──
         val afParts = mutableListOf<String>()
         val ae = opts.audioEffects
@@ -327,7 +346,8 @@ object FFmpegProcessor {
         if (!hasAnyFilter) {
             val ss = if (opts.trimStartSec > 0) "-ss ${opts.trimStartSec} " else ""
             val dur = if (opts.trimEndSec > opts.trimStartSec) "-t ${opts.trimEndSec - opts.trimStartSec} " else ""
-            return "$ss-i $input $dur-c copy -y $output"
+            val needsEncode = opts.targetWidth > 0 || opts.targetFps > 0
+            if (!needsEncode) return "$ss-i $input $dur-c copy -y $output"
         }
 
         val sb = StringBuilder()
@@ -405,10 +425,9 @@ object FFmpegProcessor {
             if (hasTts) sb.append("-map 0:v -map $ttsIdx:a ") else sb.append("-map 0:v -map 0:a? ")
         }
 
+        val (qVal, targetKbps) = qualityPreset(opts)
         val shortestFlag = if (hasTts) "-shortest " else ""
-        val origKbps = getVideoBitrateKbps(originalPath)
-        val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
-        sb.append("-c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart $shortestFlag-y $output")
+        sb.append("-c:v mpeg4 -q:v $qVal -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart $shortestFlag-y $output")
         return sb.toString()
     }
 

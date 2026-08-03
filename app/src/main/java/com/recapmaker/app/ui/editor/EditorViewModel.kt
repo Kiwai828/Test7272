@@ -62,6 +62,7 @@ data class EditorState(
     val trimStartSec: Int = 0, val trimEndSec: Int = 0, val showTrimPopup: Boolean = false,
     val thumbnailPath: String? = null,
     val showTemplatesDialog: Boolean = false, val savedTemplateNames: List<String> = emptyList(),
+    val outputQuality: String = "balanced", val targetWidth: Int = 0, val targetFps: Int = 0,
 )
 
 data class EffectTemplate(
@@ -188,6 +189,11 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun setTrimStartSec(v: Int) { state = state.copy(trimStartSec = v) }
     fun setTrimEndSec(v: Int) { state = state.copy(trimEndSec = v) }
     fun setShowTrimPopup(v: Boolean) { state = state.copy(showTrimPopup = v) }
+
+    // ═══ OUTPUT SETTINGS ═══
+    fun setOutputQuality(v: String) { state = state.copy(outputQuality = v) }
+    fun setTargetWidth(v: Int) { state = state.copy(targetWidth = v) }
+    fun setTargetFps(v: Int) { state = state.copy(targetFps = v) }
 
     // ═══ TEMPLATES ═══
     fun toggleTemplatesDialog() { state = state.copy(showTemplatesDialog = !state.showTemplatesDialog) }
@@ -366,6 +372,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                  audioEffects = state.audioEffects, extraClips = state.extraClips,
                  subtitlePath = srtPath,
                  trimStartSec = state.trimStartSec, trimEndSec = state.trimEndSec,
+                 outputQuality = state.outputQuality, targetWidth = state.targetWidth, targetFps = state.targetFps,
              )
 
             VideoProcessService.reset()
