@@ -105,6 +105,9 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun setVideoEffectVignette(v: Boolean) { state = state.copy(videoEffects = state.videoEffects.copy(vignette = v)) }
     fun setVideoEffectBrightness(v: Float) { state = state.copy(videoEffects = state.videoEffects.copy(brightness = v)) }
     fun setVideoEffectContrast(v: Float) { state = state.copy(videoEffects = state.videoEffects.copy(contrast = v)) }
+    fun setColorGrading(v: String) { state = state.copy(videoEffects = state.videoEffects.copy(colorGrading = v)) }
+    fun setSaturation(v: Float) { state = state.copy(videoEffects = state.videoEffects.copy(saturation = v)) }
+    fun setGamma(v: Float) { state = state.copy(videoEffects = state.videoEffects.copy(gamma = v)) }
 
     // ═══ BACKGROUND MUSIC ═══
     fun setBgMusicUri(uri: Uri?) { state = state.copy(bgMusicUri = uri) }

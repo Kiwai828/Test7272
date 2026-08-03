@@ -49,6 +49,7 @@ object FFmpegProcessor {
     data class VideoEffectsState(
         val grayscale: Boolean = false, val sepia: Boolean = false, val vignette: Boolean = false,
         val brightness: Float = 1.0f, val contrast: Float = 1.0f,
+        val colorGrading: String = "none", val saturation: Float = 1.0f, val gamma: Float = 1.0f,
     )
 
     data class AudioEffectsState(
@@ -261,6 +262,18 @@ object FFmpegProcessor {
         if (ve.vignette) vfParts.add("vignette=PI/4")
         if (ve.brightness != 1.0f) vfParts.add("eq=brightness=${"%.2f".format((ve.brightness - 1).coerceIn(-0.5f, 0.5f))}")
         if (ve.contrast != 1.0f) vfParts.add("eq=contrast=${"%.2f".format(ve.contrast.coerceIn(0.5f, 2.0f))}")
+
+        if (ve.colorGrading != "none") {
+            when (ve.colorGrading) {
+                "cinematic" -> vfParts.add("colorbalance=rsm=0.1:gsm=0.05:bsm=-0.15:rm=0.05:gm=0:bm=-0.05")
+                "vintage" -> vfParts.add("curves=vintage,eq=saturation=0.85")
+                "cold" -> vfParts.add("colorbalance=rsm=-0.15:gsm=0:bsm=0.1:rm=-0.1:gm=0:bm=0.1")
+                "warm" -> vfParts.add("colorbalance=rsm=0.1:gsm=0:bsm=-0.15:rm=0.1:gm=0.05:bm=-0.1")
+                "noir" -> vfParts.add("eq=saturation=0:contrast=1.3")
+            }
+        }
+        if (ve.saturation != 1.0f) vfParts.add("eq=saturation=${"%.2f".format(ve.saturation.coerceIn(0.0f, 3.0f))}")
+        if (ve.gamma != 1.0f) vfParts.add("eq=gamma=${"%.2f".format(ve.gamma.coerceIn(0.1f, 3.0f))}")
         if (opts.speed) vfParts.add("setpts=PTS/1.05")
 
         for (a in opts.blurAreas) {

@@ -193,7 +193,31 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     }
                 }
 
-                // ═══ 5-B. BACKGROUND MUSIC ═══
+                // ═══ 5-B. COLOR GRADING ═══
+                val cg = s.videoEffects
+                SectionCard("Color Grading", Icons.Default.Palette, Gold) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("none" to "None", "cinematic" to "Cinematic", "vintage" to "Vintage", "cold" to "Cold", "warm" to "Warm", "noir" to "Noir").forEach { (v, l) ->
+                            FilterChip(selected = cg.colorGrading == v, onClick = { vm.setColorGrading(v) }, label = { Text(l, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = DarkBg, containerColor = SurfaceDark, labelColor = TextMid),
+                                border = FilterChipDefaults.filterChipBorder(borderColor = CardBorder, selectedBorderColor = Gold, borderWidth = 1.dp),
+                                modifier = Modifier.height(32.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Saturation", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                        Slider(value = cg.saturation, onValueChange = { vm.setSaturation(it) }, valueRange = 0.0f..2.5f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
+                        Text("${"%.1f".format(cg.saturation)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Gamma", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                        Slider(value = cg.gamma, onValueChange = { vm.setGamma(it) }, valueRange = 0.5f..2.5f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
+                        Text("${"%.1f".format(cg.gamma)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
+                    }
+                }
+
+                // ═══ 5-C. BACKGROUND MUSIC ═══
                 val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.setBgMusicUri(it) } }
                 SectionCard("Background Music", Icons.Default.MusicNote, Emerald) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
