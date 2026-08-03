@@ -54,6 +54,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary) }
                     Text("Video Editor", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Purple, modifier = Modifier.weight(1f))
                     IconButton(onClick = { vm.toggleHistory() }) { Icon(Icons.Default.History, null, tint = TextDim) }
+                    IconButton(onClick = { vm.toggleTemplatesDialog() }) { Icon(Icons.Default.BookmarkAdded, null, tint = Gold) }
                     CoinBadge(s.gold, s.silver)
                 }
             }
@@ -385,7 +386,63 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
         }
     }
 
-    // ═══ HISTORY ═══
+    // ═══ TEMPLATES ═══
+    if (s.showTemplatesDialog) {
+        Dialog(onDismissRequest = { vm.toggleTemplatesDialog() }) {
+            Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.BookmarkAdded, null, modifier = Modifier.size(24.dp), tint = Gold)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Effect Templates", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { vm.toggleTemplatesDialog() }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = TextDim) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+                    var newTemplateName by remember { mutableStateOf("") }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newTemplateName,
+                            onValueChange = { newTemplateName = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Template name...", fontSize = 12.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Gold, unfocusedBorderColor = CardBorder, cursorColor = Gold),
+                            shape = RoundedCornerShape(10.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { vm.saveCurrentAsTemplate(newTemplateName); newTemplateName = "" },
+                            enabled = newTemplateName.isNotBlank() && !s.isProcessing,
+                            colors = ButtonDefaults.buttonColors(containerColor = Gold, disabledContainerColor = Gold.copy(0.3f)),
+                            shape = RoundedCornerShape(10.dp),
+                        ) { Text("Save Current", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkBg) }
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    Text("Prebuilt Templates", color = TextDim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    LazyColumn(Modifier.heightIn(max = 200.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(vm.getPrebuiltTemplates(), key = { it.name }) { t ->
+                            TemplateCard(template = t, isPrebuilt = true, onApply = { vm.loadTemplate(t); vm.toggleTemplatesDialog() })
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    val savedTemplates = vm.getSavedTemplates()
+                    if (savedTemplates.isNotEmpty()) {
+                        Text("Saved Templates", color = TextDim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(6.dp))
+                        LazyColumn(Modifier.heightIn(max = 200.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(savedTemplates, key = { it.name }) { t ->
+                                TemplateCard(template = t, isPrebuilt = false, onApply = { vm.loadTemplate(t); vm.toggleTemplatesDialog() }, onDelete = { vm.deleteTemplate(t.name) })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     if (s.showHistory) {
         Dialog(onDismissRequest = { vm.toggleHistory() }) {
             Surface(shape = RoundedCornerShape(20.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
@@ -414,5 +471,44 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
             }
         }
     }
+    }
+}
+
+@Composable
+fun TemplateCard(template: EffectTemplate, isPrebuilt: Boolean, onApply: () -> Unit, onDelete: (() -> Unit)? = null) {
+    Surface(color = if (isPrebuilt) SurfaceDark else Purple.copy(0.06f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, if (isPrebuilt) CardBorder else Purple.copy(0.2f))) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(template.name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                val tags = mutableListOf<String>()
+                if (template.flipEnabled) tags.add("Flip")
+                if (template.speedEnabled) tags.add("Speed")
+                if (template.pitchEnabled) tags.add("Pitch")
+                if (template.noiseEnabled) tags.add("Noise")
+                if (template.blurEnabled) tags.add("Blur")
+                if (template.videoEffects.vignette) tags.add("Vignette")
+                if (template.videoEffects.colorGrading != "none") tags.add(template.videoEffects.colorGrading.replaceFirstChar { it.uppercase() })
+                if (template.audioEffects.echo) tags.add("Echo")
+                if (template.audioEffects.reverb) tags.add("Reverb")
+                if (template.audioEffects.bassBoost) tags.add("Bass")
+                if (template.watermarkText.isNotBlank()) tags.add("WM")
+                if (tags.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        tags.take(4).forEach { tag ->
+                            Surface(color = Gold.copy(0.12f), shape = RoundedCornerShape(6.dp)) {
+                                Text(tag, fontSize = 9.sp, color = Gold, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+                    }
+                }
+            }
+            TextButton(onClick = onApply, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.textButtonColors(contentColor = Emerald)) {
+                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Apply", fontSize = 12.sp)
+            }
+            if (!isPrebuilt && onDelete != null) {
+                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Delete, null, tint = ErrorRed.copy(0.7f), modifier = Modifier.size(14.dp)) }
+            }
+        }
     }
 }

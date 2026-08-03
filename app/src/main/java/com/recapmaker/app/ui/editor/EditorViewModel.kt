@@ -2,6 +2,7 @@ package com.recapmaker.app.ui.editor
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -11,6 +12,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.recapmaker.app.data.local.VideoHistoryDao
 import com.recapmaker.app.data.local.VideoHistoryEntity
 import com.recapmaker.app.data.model.*
@@ -23,6 +26,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -57,12 +61,52 @@ data class EditorState(
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
     val trimStartSec: Int = 0, val trimEndSec: Int = 0, val showTrimPopup: Boolean = false,
     val thumbnailPath: String? = null,
+    val showTemplatesDialog: Boolean = false, val savedTemplateNames: List<String> = emptyList(),
+)
+
+data class EffectTemplate(
+    val name: String,
+    val flipEnabled: Boolean = false,
+    val speedEnabled: Boolean = false,
+    val pitchEnabled: Boolean = false,
+    val noiseEnabled: Boolean = false,
+    val blurEnabled: Boolean = false,
+    val videoEffects: FFmpegProcessor.VideoEffectsState = FFmpegProcessor.VideoEffectsState(),
+    val audioEffects: FFmpegProcessor.AudioEffectsState = FFmpegProcessor.AudioEffectsState(),
+    val watermarkText: String = "",
+    val bgMusicVolume: Float = 0.3f,
+    val autoDuck: Boolean = true,
 )
 
 @HiltViewModel
-class EditorViewModel @Inject constructor(private val repo: MainRepository, private val historyDao: VideoHistoryDao) : ViewModel() {
+class EditorViewModel @Inject constructor(private val repo: MainRepository, private val historyDao: VideoHistoryDao, @ApplicationContext private val context: Context) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
-    init { loadCoins(); loadHistory(); checkEdgeTts() }
+    init { loadCoins(); loadHistory(); checkEdgeTts(); loadSavedTemplateNames() }
+
+    private val prefs: SharedPreferences = context.getSharedPreferences("effect_templates", Context.MODE_PRIVATE)
+    private val gson = Gson()
+
+    private fun loadSavedTemplateNames() {
+        val json = prefs.getString("saved_templates", null) ?: return
+        try {
+            val type = object : TypeToken<Map<String, EffectTemplate>>() {}.type
+            val map: Map<String, EffectTemplate> = gson.fromJson(json, type)
+            state = state.copy(savedTemplateNames = map.keys.toList())
+        } catch (_: Exception) {}
+    }
+
+    private fun readAllTemplates(): MutableMap<String, EffectTemplate> {
+        val json = prefs.getString("saved_templates", null) ?: return mutableMapOf()
+        return try {
+            val type = object : TypeToken<MutableMap<String, EffectTemplate>>() {}.type
+            gson.fromJson(json, type)
+        } catch (_: Exception) { mutableMapOf() }
+    }
+
+    private fun writeAllTemplates(map: Map<String, EffectTemplate>) {
+        prefs.edit().putString("saved_templates", gson.toJson(map)).apply()
+        state = state.copy(savedTemplateNames = map.keys.toList())
+    }
 
     private fun checkEdgeTts() { viewModelScope.launch { when (val r = repo.getEdgeTtsConfig()) { is Result.Success -> state = state.copy(edgeTtsAvailable = true); is Result.Error -> state = state.copy(edgeTtsAvailable = false) } } }
 
@@ -144,6 +188,87 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun setTrimStartSec(v: Int) { state = state.copy(trimStartSec = v) }
     fun setTrimEndSec(v: Int) { state = state.copy(trimEndSec = v) }
     fun setShowTrimPopup(v: Boolean) { state = state.copy(showTrimPopup = v) }
+
+    // ═══ TEMPLATES ═══
+    fun toggleTemplatesDialog() { state = state.copy(showTemplatesDialog = !state.showTemplatesDialog) }
+
+    fun saveCurrentAsTemplate(name: String) {
+        if (name.isBlank()) return
+        val template = EffectTemplate(
+            name = name.trim(),
+            flipEnabled = state.flipEnabled,
+            speedEnabled = state.speedEnabled,
+            pitchEnabled = state.pitchEnabled,
+            noiseEnabled = state.noiseEnabled,
+            blurEnabled = state.blurEnabled,
+            videoEffects = state.videoEffects,
+            audioEffects = state.audioEffects,
+            watermarkText = state.wmText,
+            bgMusicVolume = state.bgMusicVolume,
+            autoDuck = state.autoDuck,
+        )
+        val map = readAllTemplates().toMutableMap()
+        map[name.trim()] = template
+        writeAllTemplates(map)
+        state = state.copy(success = "✅ Template \"${name.trim()}\" saved!")
+    }
+
+    fun loadTemplate(template: EffectTemplate) {
+        state = state.copy(
+            flipEnabled = template.flipEnabled,
+            speedEnabled = template.speedEnabled,
+            pitchEnabled = template.pitchEnabled,
+            noiseEnabled = template.noiseEnabled,
+            blurEnabled = template.blurEnabled,
+            videoEffects = template.videoEffects,
+            audioEffects = template.audioEffects,
+            wmText = template.watermarkText,
+            bgMusicVolume = template.bgMusicVolume,
+            autoDuck = template.autoDuck,
+            blurAreas = if (template.blurEnabled) listOf(BlurArea(50, 50, 120, 60)) else emptyList(),
+        )
+        state = state.copy(success = "✅ Template \"${template.name}\" applied!")
+    }
+
+    fun deleteTemplate(name: String) {
+        val map = readAllTemplates().toMutableMap()
+        map.remove(name)
+        writeAllTemplates(map)
+        state = state.copy(success = "🗑 Template deleted")
+    }
+
+    fun getPrebuiltTemplates(): List<EffectTemplate> = listOf(
+        EffectTemplate(
+            name = "Cinematic",
+            flipEnabled = false, speedEnabled = false, pitchEnabled = false, noiseEnabled = false, blurEnabled = false,
+            videoEffects = FFmpegProcessor.VideoEffectsState(grayscale = false, sepia = false, vignette = true, brightness = 0.9f, contrast = 1.1f, colorGrading = "cinematic", saturation = 0.85f, gamma = 0.95f),
+            audioEffects = FFmpegProcessor.AudioEffectsState(echo = false, reverb = true, bassBoost = false, echoDelay = 60f, echoDecay = 0.4f, reverbAmount = 0.3f, bassAmount = 3f),
+            watermarkText = "", bgMusicVolume = 0.3f, autoDuck = true,
+        ),
+        EffectTemplate(
+            name = "Meme",
+            flipEnabled = true, speedEnabled = true, pitchEnabled = true, noiseEnabled = false, blurEnabled = false,
+            videoEffects = FFmpegProcessor.VideoEffectsState(grayscale = false, sepia = false, vignette = false, brightness = 1.1f, contrast = 1.3f, colorGrading = "none", saturation = 1.5f, gamma = 1.0f),
+            audioEffects = FFmpegProcessor.AudioEffectsState(echo = true, reverb = false, bassBoost = true, echoDelay = 100f, echoDecay = 0.5f, reverbAmount = 0.0f, bassAmount = 5f),
+            watermarkText = "", bgMusicVolume = 0.5f, autoDuck = false,
+        ),
+        EffectTemplate(
+            name = "Music Video",
+            flipEnabled = false, speedEnabled = false, pitchEnabled = false, noiseEnabled = false, blurEnabled = false,
+            videoEffects = FFmpegProcessor.VideoEffectsState(grayscale = false, sepia = false, vignette = false, brightness = 1.0f, contrast = 1.0f, colorGrading = "none", saturation = 1.2f, gamma = 1.0f),
+            audioEffects = FFmpegProcessor.AudioEffectsState(echo = true, reverb = false, bassBoost = true, echoDelay = 80f, echoDecay = 0.3f, reverbAmount = 0.0f, bassAmount = 6f),
+            watermarkText = "", bgMusicVolume = 0.6f, autoDuck = false,
+        ),
+    )
+
+    fun getSavedTemplates(): List<EffectTemplate> {
+        return try {
+            val json = prefs.getString("saved_templates", null) ?: return emptyList()
+            val type = object : TypeToken<Map<String, EffectTemplate>>() {}.type
+            val map: Map<String, EffectTemplate> = gson.fromJson(json, type)
+            map.values.toList()
+        } catch (_: Exception) { emptyList() }
+    }
 
     // ═══ THUMBNAIL ═══
     fun generateThumbnail(ctx: Context) {
