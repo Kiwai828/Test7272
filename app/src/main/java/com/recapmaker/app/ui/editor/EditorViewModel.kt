@@ -275,18 +275,25 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
         val chunks = splitTextIntoChunks(text, 800)
         Log.d("TTS", "Text ${text.length} chars → ${chunks.size} chunks")
 
-        val results: List<Result>
+        val results: List<Pair<Int, String?>>
+        state = state.copy(processStatus = "TTS generating...")
         coroutineScope {
             results = chunks.mapIndexed { idx, chunk ->
                 async(Dispatchers.IO) {
-                    state = state.copy(processStatus = "AI Voice ${idx + 1}/${chunks.size}...")
                     val audioPath = generateSingleTtsChunk(context, chunk, voice)
                     idx to audioPath
                 }
             }.awaitAll()
         }
 
-        val chunkFiles = results.mapNotNull { it.second }
+        val chunkFiles = mutableListOf<String>()
+        results.forEach { (idx, path) ->
+            if (path != null) {
+                chunkFiles.add(path)
+            } else {
+                Log.w("TTS", "Chunk $idx failed, skipping")
+            }
+        }
         if (chunkFiles.isEmpty()) {
             state = state.copy(processStatus = "⚠ TTS audio generate မရ")
             delay(1500); return null
@@ -388,21 +395,22 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
         val chunks = splitTextIntoChunks(text, 800)
         Log.d("TTS", "Edge TTS: ${text.length} chars → ${chunks.size} chunks")
 
-        val results: List<Result>
+        val results: List<Pair<Int, Result>>
+        state = state.copy(processStatus = "Edge TTS generating...")
         coroutineScope {
             results = chunks.mapIndexed { idx, chunk ->
                 async(Dispatchers.IO) {
-                    state = state.copy(processStatus = "Edge TTS ${idx + 1}/${chunks.size}...")
                     val r = repo.edgeTtsDirect(chunk, voice, key, region)
                     idx to r
                 }
             }.awaitAll()
         }
 
-        val chunkFiles = results.mapNotNull { (_, r) ->
+        val chunkFiles = mutableListOf<String>()
+        results.forEach { (idx, r) ->
             when (r) {
-                is Result.Success -> r.data.absolutePath
-                is Result.Error -> { Log.e("TTS", "Edge chunk ${r.message}"); null }
+                is Result.Success -> chunkFiles.add(r.data.absolutePath)
+                is Result.Error -> { Log.e("TTS", "Edge chunk $idx failed: ${r.message}"); }
             }
         }
 
