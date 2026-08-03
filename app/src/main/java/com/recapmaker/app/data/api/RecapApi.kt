@@ -18,6 +18,7 @@ interface RecapApi {
     // User & Config
     @GET("api/user-info") suspend fun getUserInfo(): Response<UserInfoResponse>
     @GET("api/config") suspend fun getConfig(): Response<ConfigResponse>
+    @GET("api/health") suspend fun health(): Response<MessageResponse>
 
     // Coins
     @POST("api/daily-checkin") suspend fun dailyCheckin(): Response<CoinResponse>
