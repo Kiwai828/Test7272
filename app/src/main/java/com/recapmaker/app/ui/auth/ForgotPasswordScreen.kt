@@ -34,7 +34,7 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
     LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize().background(DarkBg)) {
-        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffset = { -it / 4 }), exit = fadeOut()) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffsetY = { it / 4 }), exit = fadeOut()) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary, modifier = Modifier.clickable { vm.resetState(); onBack() }.padding(8.dp))

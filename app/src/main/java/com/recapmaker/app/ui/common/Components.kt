@@ -4,8 +4,8 @@ import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -94,10 +93,12 @@ fun PasswordField(
 
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, loading: Boolean = false, modifier: Modifier = Modifier, color: Color = Purple, enabled: Boolean = true) {
-    var pressed by remember { mutableStateOf(false) }
-    val scale = if (pressed && !loading && enabled) 0.96f else 1f
-    Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(50.dp).scale(scale).pointerInput(Unit) { detectTapGestures(onPress = { pressed = true; it.press() }, onRelease = { pressed = false }) }, enabled = !loading && enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = color.copy(0.4f)), shape = RoundedCornerShape(12.dp)) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale = if (isPressed && !loading && enabled) 0.96f else 1f
+    Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(50.dp).scale(scale), enabled = !loading && enabled,
+        colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = color.copy(0.4f)), shape = RoundedCornerShape(12.dp),
+        interactionSource = interactionSource) {
         if (loading) CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
         else Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
@@ -380,11 +381,12 @@ fun ShimmerEffect(show: Boolean = true, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun PulseGlow(color: Color, visible: Boolean = true, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun PulseGlow(color: Color, visible: Boolean = true, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     if (!visible) return
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alpha by infiniteTransition.animateFloat(initialValue = 0.3f, targetValue = 0.8f, animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOut), RepeatMode.Reverse), label = "pulseAlpha")
-    Box(modifier = modifier.shadow(alpha * 24.dp, RoundedCornerShape(16.dp), spotColor = color.copy(alpha = alpha))) {
+    val elevation = with(LocalDensity.current) { (alpha * 24f).toDp() }
+    Box(modifier = modifier.shadow(elevation, RoundedCornerShape(16.dp), spotColor = color.copy(alpha = alpha))) {
         content()
     }
 }
@@ -392,9 +394,7 @@ fun PulseGlow(color: Color, visible: Boolean = true, modifier: Modifier = Modifi
 @Composable
 fun AnimatedGradientBackground(modifier: Modifier = Modifier, enabled: Boolean = true) {
     if (!enabled) { Box(modifier = modifier.background(DarkBg)); return }
-    val infiniteTransition = rememberInfiniteTransition(label = "gradient")
-    val rotation by infiniteTransition.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing), RepeatMode.Restart), label = "gradientRotation")
-    Box(modifier = modifier.background(Brush.sweepGradient(listOf(Purple.copy(0.15f), Emerald.copy(0.1f), PurpleDark.copy(0.12f), Color.Transparent)).rotate(rotation)))
+    Box(modifier = modifier.background(Brush.sweepGradient(listOf(Purple.copy(0.15f), Emerald.copy(0.1f), PurpleDark.copy(0.12f), Color.Transparent))))
 }
 
 @Composable

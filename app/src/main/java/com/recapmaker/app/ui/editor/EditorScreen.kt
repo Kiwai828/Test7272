@@ -44,7 +44,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize()) {
-        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffset = { it / 4 }), exit = fadeOut()) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffsetY = { it / 4 }), exit = fadeOut()) {
             Column(Modifier.fillMaxSize().background(DarkBg)) {
             Surface(color = CardBg, shadowElevation = 4.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -94,14 +94,14 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                                 Surface(color = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder)) {
                                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Text("Size: ${s.wmSize}", color = TextDim, fontSize = 12.sp)
-                                        Slider(s.wmSize.toFloat(), { vm.setWmSize(it.toInt()) }, valueRange = 12f..72f, colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                                        Slider(value = s.wmSize.toFloat(), onValueChange = { vm.setWmSize(it.toInt()) }, valueRange = 12f..72f, colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
                                         Text("အရောင်", color = TextDim, fontSize = 12.sp)
                                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("#FFFFFF","#FF0000","#00FF00","#0000FF","#FFFF00","#FF00FF","#00FFFF","#000000").forEach { hex -> val c = try { Color(android.graphics.Color.parseColor(hex)) } catch (_: Exception) { Color.White }; Box(Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)).background(c).border(2.dp, if (s.wmColor.equals(hex, true)) Purple else Color.Transparent, RoundedCornerShape(6.dp)).clickable { vm.setWmColor(hex) }) } }
                                         Text("နေရာ", color = TextDim, fontSize = 12.sp)
                                         PositionSelector(s.wmPosition) { vm.setWmPosition(it) }
                                         EffectToggle("ရွေ့လျား Scroll", Icons.Default.SwapHorizontalCircle, s.wmScroll) { vm.setWmScroll(it) }
                                         EffectToggle("နောက်ခံ Box", Icons.Default.CheckBoxOutlineBlank, s.wmBox) { vm.setWmBox(it) }
-                                        AnimatedVisibility(s.wmBox) { Column { Text("Box Opacity: ${"%.1f".format(s.wmBoxOpacity)}", color = TextDim, fontSize = 12.sp); Slider(s.wmBoxOpacity, { vm.setWmBoxOpacity(it) }, valueRange = 0.1f..1f, colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple)) } }
+                                        AnimatedVisibility(s.wmBox) { Column { Text("Box Opacity: ${"%.1f".format(s.wmBoxOpacity)}", color = TextDim, fontSize = 12.sp);                                     Slider(value = s.wmBoxOpacity, onValueChange = { vm.setWmBoxOpacity(it) }, valueRange = 0.1f..1f, colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple)) } }
                                     }
                                 }
                             }
@@ -152,12 +152,12 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Brightness", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                        Slider(ve.brightness, { vm.setVideoEffectBrightness(it) }, valueRange = 0.5f..1.5f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                        Slider(value = ve.brightness, onValueChange = { vm.setVideoEffectBrightness(it) }, valueRange = 0.5f..1.5f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
                         Text("${"%.1f".format(ve.brightness)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Contrast", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                        Slider(ve.contrast, { vm.setVideoEffectContrast(it) }, valueRange = 0.5f..2.0f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
+                        Slider(value = ve.contrast, onValueChange = { vm.setVideoEffectContrast(it) }, valueRange = 0.5f..2.0f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple))
                         Text("${"%.1f".format(ve.contrast)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                     }
                 }
@@ -176,7 +176,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         Spacer(Modifier.height(8.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Volume", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                            Slider(s.bgMusicVolume, { vm.setBgMusicVolume(it) }, valueRange = 0f..1f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Emerald, activeTrackColor = Emerald))
+                            Slider(value = s.bgMusicVolume, onValueChange = { vm.setBgMusicVolume(it) }, valueRange = 0f..1f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Emerald, activeTrackColor = Emerald))
                             Text("${(s.bgMusicVolume * 100).toInt()}%", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                         }
                         EffectToggle("Auto-Duck (lower when speaking)", Icons.Default.VolumeDown, s.autoDuck, Emerald) { vm.setAutoDuck(it) }
@@ -195,12 +195,12 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("Delay", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                                Slider(ae.echoDelay, { vm.setEchoDelay(it) }, valueRange = 10f..200f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan))
+                                Slider(value = ae.echoDelay, onValueChange = { vm.setEchoDelay(it) }, valueRange = 10f..200f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan))
                                 Text("${ae.echoDelay.toInt()}ms", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(40.dp))
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("Decay", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                                Slider(ae.echoDecay, { vm.setEchoDecay(it) }, valueRange = 0.1f..0.9f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan))
+                                Slider(value = ae.echoDecay, onValueChange = { vm.setEchoDecay(it) }, valueRange = 0.1f..0.9f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan))
                                 Text("${"%.1f".format(ae.echoDecay)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                             }
                         }
@@ -208,14 +208,14 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     AnimatedVisibility(ae.reverb) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                             Text("Amount", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                            Slider(ae.reverbAmount, { vm.setReverbAmount(it) }, valueRange = 0.1f..0.8f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Rose, activeTrackColor = Rose))
+                            Slider(value = ae.reverbAmount, onValueChange = { vm.setReverbAmount(it) }, valueRange = 0.1f..0.8f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Rose, activeTrackColor = Rose))
                             Text("${"%.1f".format(ae.reverbAmount)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                         }
                     }
                     AnimatedVisibility(ae.bassBoost) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                             Text("Gain", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                            Slider(ae.bassAmount, { vm.setBassAmount(it) }, valueRange = 1f..10f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
+                            Slider(value = ae.bassAmount, onValueChange = { vm.setBassAmount(it) }, valueRange = 1f..10f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
                             Text("${ae.bassAmount.toInt()}dB", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                         }
                     }

@@ -27,7 +27,7 @@ fun LoginScreen(vm: AuthViewModel, onRegister: () -> Unit, onForgot: () -> Unit,
     LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize().background(DarkBg), contentAlignment = Alignment.Center) {
-        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500), initialOffset = { it / 3 }), exit = fadeOut()) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500), initialOffsetY = { it / 3 }), exit = fadeOut()) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("🎬", fontSize = 48.sp)
             Spacer(Modifier.height(8.dp))
