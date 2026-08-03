@@ -19,12 +19,17 @@ class TokenManager @Inject constructor(@ApplicationContext private val context: 
         private val KEY_TOKEN = stringPreferencesKey("jwt_token")
         private val KEY_USERNAME = stringPreferencesKey("username")
     }
+    @Volatile var latestToken: String? = null
     val tokenFlow: Flow<String?> = context.dataStore.data.map { it[KEY_TOKEN] }
     val isLoggedIn: Flow<Boolean> = tokenFlow.map { !it.isNullOrEmpty() }
     suspend fun getToken(): String? = tokenFlow.first()
     suspend fun getUsername(): String? = context.dataStore.data.first()[KEY_USERNAME]
     suspend fun saveToken(token: String, username: String = "") {
+        latestToken = token
         context.dataStore.edit { it[KEY_TOKEN] = token; if (username.isNotEmpty()) it[KEY_USERNAME] = username }
     }
-    suspend fun clear() { context.dataStore.edit { it.clear() } }
+    suspend fun clear() {
+        latestToken = null
+        context.dataStore.edit { it.clear() }
+    }
 }
