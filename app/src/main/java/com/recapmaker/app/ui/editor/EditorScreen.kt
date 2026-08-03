@@ -323,4 +323,5 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
             }
         }
     }
+    }
 }

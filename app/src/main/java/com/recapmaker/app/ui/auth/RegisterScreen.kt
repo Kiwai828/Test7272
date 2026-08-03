@@ -54,5 +54,6 @@ fun RegisterScreen(vm: AuthViewModel, onLogin: () -> Unit, onSuccess: () -> Unit
             }
             Spacer(Modifier.height(32.dp))
         }
+        }
     }
 }

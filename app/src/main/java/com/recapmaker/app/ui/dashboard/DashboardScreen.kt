@@ -75,6 +75,7 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
                 }
             }
         }
+    }
 
         Spacer(Modifier.height(20.dp))
 
@@ -132,6 +133,7 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
     if (showCheckin) {
         CheckinDialog(s.checkedInToday, s.checkinSilver, s.isLoading, { vm.dailyCheckin() }) { showCheckin = false }
     }
+}
 }
 
 // ── Coin Card ──
