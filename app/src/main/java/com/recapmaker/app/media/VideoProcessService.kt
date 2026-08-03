@@ -26,8 +26,14 @@ class VideoProcessService : Service() {
         const val EXTRA_INPUT_PATH = "input_path"
         const val EXTRA_OPTIONS_JSON = "options_json"
 
+        const val ACTION_PAUSE = "com.recapmaker.app.ACTION_PAUSE"
+        const val ACTION_RESUME = "com.recapmaker.app.ACTION_RESUME"
+        const val ACTION_CANCEL = "com.recapmaker.app.ACTION_CANCEL"
+
         // Shared state — ViewModel polls this
         @Volatile var isRunning = false; private set
+        @Volatile var isPaused = false; private set
+        @Volatile var cancelRequested = false; private set
         @Volatile var currentStatus = ""; private set
         @Volatile var resultSuccess: Boolean? = null; private set
         @Volatile var resultMessage: String? = null; private set
@@ -38,13 +44,19 @@ class VideoProcessService : Service() {
         var pendingOptions: FFmpegProcessor.ProcessOptions? = null
 
         fun reset() {
-            isRunning = false; currentStatus = ""; resultSuccess = null
-            resultMessage = null; resultOutputPath = null
+            isRunning = false
+            isPaused = false
+            cancelRequested = false
+            currentStatus = ""
+            resultSuccess = null
+            resultMessage = null
+            resultOutputPath = null
         }
     }
 
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + job)
+    @Volatile private var processingJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -57,6 +69,31 @@ class VideoProcessService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_PAUSE -> {
+                isPaused = true
+                Log.d(TAG, "Pause requested")
+                updateNotification(currentStatus)
+                return START_NOT_STICKY
+            }
+            ACTION_RESUME -> {
+                isPaused = false
+                Log.d(TAG, "Resume requested")
+                updateNotification(currentStatus)
+                return START_NOT_STICKY
+            }
+            ACTION_CANCEL -> {
+                cancelRequested = true
+                isPaused = false
+                isRunning = false
+                Log.d(TAG, "Cancel requested")
+                processingJob?.cancel()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
         val inputPath = pendingInputPath
         val options = pendingOptions
 
@@ -72,10 +109,11 @@ class VideoProcessService : Service() {
 
         // Mark running BEFORE launching coroutine (prevents race condition)
         isRunning = true
+        cancelRequested = false
         resultSuccess = null
         Log.d(TAG, "Starting process: $inputPath")
 
-        scope.launch {
+        processingJob = scope.launch {
             try {
                 // Step 1: FFmpeg process
                 currentStatus = "Video ပြုပြင်နေသည်..."
@@ -84,14 +122,32 @@ class VideoProcessService : Service() {
 
                 val result = FFmpegProcessor.process(inputPath, this@VideoProcessService, options)
 
+                // Honor pause between steps
+                checkPaused()
+                if (cancelRequested) {
+                    Log.d(TAG, "Cancelled before gallery save")
+                    return@launch
+                }
+
                 if (result.success && result.outputPath != null) {
                     // Step 2: Save to gallery
                     currentStatus = "Gallery သို့ သိမ်းနေသည်..."
                     updateNotification(currentStatus)
                     Log.d(TAG, "Saving to gallery...")
 
+                    checkPaused()
+                    if (cancelRequested) {
+                        Log.d(TAG, "Cancelled during gallery save")
+                        return@launch
+                    }
+
                     val outputFile = File(result.outputPath)
                     val galleryUri = FFmpegProcessor.saveToGallery(this@VideoProcessService, outputFile)
+
+                    if (cancelRequested) {
+                        Log.d(TAG, "Cancelled after gallery save")
+                        return@launch
+                    }
 
                     resultSuccess = true
                     resultOutputPath = galleryUri ?: result.outputPath
@@ -101,12 +157,17 @@ class VideoProcessService : Service() {
                     showDoneNotification("✅ Video ပြီးပါပြီ!", "Movies/RecapMaker/ ထဲ သိမ်းပြီး", true)
                     Log.d(TAG, "Success! Gallery URI: $galleryUri")
                 } else {
+                    if (cancelRequested) {
+                        Log.d(TAG, "Cancelled on failure path")
+                        return@launch
+                    }
                     resultSuccess = false
                     resultMessage = result.error ?: "FFmpeg processing failed"
                     showDoneNotification("❌ Process Failed", resultMessage?.take(100) ?: "", false)
                     Log.e(TAG, "FFmpeg failed: ${result.error}")
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 resultSuccess = false
                 resultMessage = "Service error: ${e.message}"
                 showDoneNotification("❌ Error", e.message?.take(100) ?: "Unknown error", false)
@@ -116,6 +177,8 @@ class VideoProcessService : Service() {
                 pendingInputPath = null
                 pendingOptions = null
                 isRunning = false
+                isPaused = false
+                processingJob = null
                 Log.d(TAG, "Service finishing, isRunning=false")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 try {
@@ -127,6 +190,14 @@ class VideoProcessService : Service() {
         }
 
         return START_NOT_STICKY
+    }
+
+    private suspend fun checkPaused() {
+        while (isPaused) {
+            if (cancelRequested) return
+            updateNotification(currentStatus)
+            delay(500)
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -158,14 +229,35 @@ class VideoProcessService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val displayText = if (isPaused) "⏸ Paused" else text
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Recap Maker")
-            .setContentText(text)
+            .setContentText(displayText)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .setProgress(0, 0, true)
             .setSilent(true)
-            .build()
+
+        // Pause/Resume toggle
+        if (isPaused) {
+            builder.addAction(createAction(android.R.drawable.ic_media_play, "Resume", ACTION_RESUME))
+        } else {
+            builder.addAction(createAction(android.R.drawable.ic_media_pause, "Pause", ACTION_PAUSE))
+        }
+        // Cancel always available
+        builder.addAction(createAction(android.R.drawable.ic_delete, "Cancel", ACTION_CANCEL))
+        return builder.build()
+    }
+
+    private fun createAction(icon: Int, label: String, action: String): NotificationCompat.Action {
+        val intent = Intent(this, VideoProcessService::class.java).setAction(action)
+        val pi = PendingIntent.getService(
+            this,
+            action.hashCode(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return NotificationCompat.Action.Builder(icon, label, pi).build()
     }
 
     private fun playCompletionSound(success: Boolean) {
