@@ -72,7 +72,8 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         } else Result.Error("Failed to load config")
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
-    suspend fun edgeTtsDirect(text: String, voice: String, apiKey: String, region: String = "eastus"): Result<File> = try {
+    suspend fun edgeTtsDirect(text: String, voice: String, apiKey: String, region: String = "eastus"): Result<File> {
+        return try {
         val client = okhttp3.OkHttpClient()
         val ssml = """
             <speak version='1.0' xml:lang='my-MM'>
@@ -106,4 +107,5 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         ttsResp.close()
         if (outFile.length() > 0) Result.Success(outFile) else Result.Error("Empty audio response")
     } catch (e: Exception) { Result.Error(e.message ?: "Edge TTS error") }
+    }
 }

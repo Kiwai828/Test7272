@@ -1,5 +1,7 @@
 package com.recapmaker.app.ui.auth
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,7 +27,7 @@ fun LoginScreen(vm: AuthViewModel, onRegister: () -> Unit, onForgot: () -> Unit,
     LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize().background(DarkBg), contentAlignment = Alignment.Center) {
-        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500), initialOffset = { it / 3 }), exit = fadeOut()) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500), initialOffsetY = { it / 3 }), exit = fadeOut()) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("🎬", fontSize = 48.sp)
             Spacer(Modifier.height(8.dp))
@@ -46,6 +48,7 @@ fun LoginScreen(vm: AuthViewModel, onRegister: () -> Unit, onForgot: () -> Unit,
                 Text("Account မရှိသေးဘူးလား? ", color = TextDim, fontSize = 14.sp)
                 Text("Register", color = Purple, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { onRegister() })
             }
+        }
         }
     }
 }

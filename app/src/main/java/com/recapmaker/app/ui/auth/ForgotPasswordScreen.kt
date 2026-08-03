@@ -1,5 +1,7 @@
 package com.recapmaker.app.ui.auth
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -32,7 +34,7 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
     LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize().background(DarkBg)) {
-        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffset = { -it / 4 }), exit = fadeOut()) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffsetY = { it / 4 }), exit = fadeOut()) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary, modifier = Modifier.clickable { vm.resetState(); onBack() }.padding(8.dp))
@@ -58,6 +60,7 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
                 ErrorBanner(s.error)
                 PrimaryButton("Reset Password", { fm.clearFocus(); vm.resetPassword(email.trim(), code.trim(), newPw, confirmPw) }, s.isLoading, color = Emerald)
             }
+        }
         }
     }
 }
