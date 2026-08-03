@@ -51,6 +51,7 @@ data class EditorState(
     val extraClips: List<String> = emptyList(),
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
+    val trimStartSec: Int = 0, val trimEndSec: Int = 0, val showTrimPopup: Boolean = false,
 )
 
 @HiltViewModel
@@ -61,7 +62,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     private fun checkEdgeTts() { viewModelScope.launch { when (val r = repo.getEdgeTtsConfig()) { is Result.Success -> state = state.copy(edgeTtsAvailable = true); is Result.Error -> state = state.copy(edgeTtsAvailable = false) } } }
 
     private fun loadCoins() { viewModelScope.launch { when (val r = repo.getUserInfo()) { is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver, pricingTiers = r.data.pricing_tiers ?: emptyList()); is Result.Error -> {} } } }
-    val costText: String get() { val d = state.videoDuration; if (d == 0 && state.videoLocalPath == null) return ""; val c = getCostForDuration(d, state.pricingTiers); if (c == -1) return "(ရှည်လွန်း)"; if (c == 0) return "(အခမဲ့)"; return if (state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)) "(🥇 $c Gold)" else "($c Coins)" }
+    val costText: String get() { val d = if (state.trimEndSec > state.trimStartSec) state.trimEndSec - state.trimStartSec else state.videoDuration; if (d == 0 && state.videoLocalPath == null) return ""; val c = getCostForDuration(d, state.pricingTiers); if (c == -1) return "(ရှည်လွန်း)"; if (c == 0) return "(အခမဲ့)"; return if (state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)) "(🥇 $c Gold)" else "($c Coins)" }
     val filteredVoices: List<VoiceInfo> get() { val s = if (state.voiceTab == "google") VoiceData.googleVoices else VoiceData.microsoftVoices; val q = state.voiceSearch.lowercase().trim(); return if (q.isEmpty()) s else s.filter { it.label.lowercase().contains(q) || it.gender.name.lowercase().contains(q) } }
 
     // ═══ VIDEO SOURCE ═══
@@ -131,6 +132,11 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun setUseEdgeTts(v: Boolean) { state = state.copy(useEdgeTts = v) }
     fun setEdgeTtsAvailable(v: Boolean) { state = state.copy(edgeTtsAvailable = v) }
 
+    // ═══ TRIM ═══
+    fun setTrimStartSec(v: Int) { state = state.copy(trimStartSec = v) }
+    fun setTrimEndSec(v: Int) { state = state.copy(trimEndSec = v) }
+    fun setShowTrimPopup(v: Boolean) { state = state.copy(showTrimPopup = v) }
+
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }
     fun translateScript() { if (state.aiText.isBlank()) return; viewModelScope.launch { state = state.copy(isAnalyzing = true); when (val r = repo.analyzeText(text = state.aiText, instruction = "Translate to natural spoken Burmese. Output ONLY Burmese text.")) { is Result.Success -> state = state.copy(aiText = r.data.text ?: state.aiText, isAnalyzing = false); is Result.Error -> state = state.copy(isAnalyzing = false, error = "${r.message}") } } }
@@ -153,12 +159,13 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
 
             // ── 1. Coins ──
             state = state.copy(processStatus = "Coins စစ်ဆေးနေသည်...")
-            val cost = getCostForDuration(state.videoDuration, state.pricingTiers)
+            val effectiveDuration = if (state.trimEndSec > state.trimStartSec) state.trimEndSec - state.trimStartSec else state.videoDuration
+            val cost = getCostForDuration(effectiveDuration, state.pricingTiers)
             var coinTypeUsed = "auto"
             if (cost > 0) {
                 val isGemini = state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)
                 coinTypeUsed = if (isGemini) "gold" else "auto"
-                when (val r = repo.deductCoins(cost, "Video ${state.videoDuration}s", coinTypeUsed)) {
+                when (val r = repo.deductCoins(cost, "Video ${effectiveDuration}s", coinTypeUsed)) {
                     is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver)
                     is Result.Error -> { state = state.copy(isProcessing = false, processStatus = "", error = "Coins: ${r.message}"); return@launch }
                 }
@@ -201,18 +208,19 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
             // ── 6. Build options + start service ──
             state = state.copy(processStatus = "Video processing...")
             val opts = FFmpegProcessor.ProcessOptions(
-                flip = state.flipEnabled, speed = state.speedEnabled, pitch = state.pitchEnabled, noise = state.noiseEnabled,
-                blurAreas = if (state.blurEnabled) state.blurAreas else emptyList(),
-                logoPath = logoPath, logoX = state.logoArea.x, logoY = state.logoArea.y, logoW = state.logoArea.w.coerceAtLeast(10), logoH = state.logoArea.h.coerceAtLeast(10),
-                watermarkText = state.wmText, watermarkPosition = state.wmPosition, watermarkSize = state.wmSize, watermarkColor = state.wmColor,
-                watermarkScroll = state.wmScroll, watermarkBox = state.wmBox, watermarkBoxOpacity = state.wmBoxOpacity,
-                ttsAudioPath = ttsAudioPath, videoDurationSec = state.videoDuration,
-                videoWidth = state.videoWidth, videoHeight = state.videoHeight,
-                previewWidth = state.previewWidth, previewHeight = state.previewHeight,
-                videoEffects = state.videoEffects, bgMusicPath = bgMusicPath, bgMusicVolume = state.bgMusicVolume, autoDuck = state.autoDuck,
-                audioEffects = state.audioEffects, extraClips = state.extraClips,
-                subtitlePath = srtPath,
-            )
+                 flip = state.flipEnabled, speed = state.speedEnabled, pitch = state.pitchEnabled, noise = state.noiseEnabled,
+                 blurAreas = if (state.blurEnabled) state.blurAreas else emptyList(),
+                 logoPath = logoPath, logoX = state.logoArea.x, logoY = state.logoArea.y, logoW = state.logoArea.w.coerceAtLeast(10), logoH = state.logoArea.h.coerceAtLeast(10),
+                 watermarkText = state.wmText, watermarkPosition = state.wmPosition, watermarkSize = state.wmSize, watermarkColor = state.wmColor,
+                 watermarkScroll = state.wmScroll, watermarkBox = state.wmBox, watermarkBoxOpacity = state.wmBoxOpacity,
+                 ttsAudioPath = ttsAudioPath, videoDurationSec = state.videoDuration,
+                 videoWidth = state.videoWidth, videoHeight = state.videoHeight,
+                 previewWidth = state.previewWidth, previewHeight = state.previewHeight,
+                 videoEffects = state.videoEffects, bgMusicPath = bgMusicPath, bgMusicVolume = state.bgMusicVolume, autoDuck = state.autoDuck,
+                 audioEffects = state.audioEffects, extraClips = state.extraClips,
+                 subtitlePath = srtPath,
+                 trimStartSec = state.trimStartSec, trimEndSec = state.trimEndSec,
+             )
 
             VideoProcessService.reset()
             VideoProcessService.pendingInputPath = inputPath
