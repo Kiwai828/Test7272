@@ -26,8 +26,12 @@ fun RegisterScreen(vm: AuthViewModel, onLogin: () -> Unit, onSuccess: () -> Unit
     val fm = LocalFocusManager.current
     LaunchedEffect(s.loginSuccess) { if (s.loginSuccess) onSuccess() }
 
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
     Box(Modifier.fillMaxSize().background(DarkBg), contentAlignment = Alignment.Center) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500), initialOffset = { it / 3 }), exit = fadeOut()) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(48.dp))
             Text("🎬", fontSize = 48.sp)
             Spacer(Modifier.height(8.dp))

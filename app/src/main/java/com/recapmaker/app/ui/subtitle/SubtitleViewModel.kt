@@ -109,9 +109,53 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
                     is Result.Error -> { state = state.copy(isProcessing = false, error = "Coins: ${r.message}"); return@launch }
                 }
             }
-            // TODO: Extract audio → /api/ai/stt → SRT → FFmpeg burn subtitles
-            kotlinx.coroutines.delay(2000)
-            state = state.copy(isProcessing = false)
+
+            state = state.copy(processStatus = "Extracting audio...")
+            val audioPath = FFmpegProcessor.extractAudio(state.videoLocalPath!!, context)
+                ?: run { state = state.copy(isProcessing = false, processStatus = "", error = "Audio extract fail"); return@launch }
+
+            state = state.copy(processStatus = "Transcribing...")
+            val af = File(audioPath)
+            val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP)
+            af.delete()
+
+            val sttResult = repo.groqStt(File(audioPath.takeIf { File(it).exists() } ?: run { val f = File(context.cacheDir, "stt_${System.currentTimeMillis()}.m4a"); f.writeBytes(android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)); f }))
+            val transcribedText = when (sttResult) {
+                is Result.Success -> sttResult.data.result?.text ?: ""
+                is Result.Error -> ""
+            }
+
+            if (transcribedText.isBlank()) {
+                state = state.copy(processStatus = "", isProcessing = false, error = "STT: no speech detected")
+                return@launch
+            }
+
+            state = state.copy(processStatus = "Burning subtitles...")
+            val srtFile = File(context.cacheDir, "subs_${System.currentTimeMillis()}.srt")
+            val words = transcribedText.split(" ")
+            val wordDur = (state.videoDuration.toFloat() / words.size.coerceAtLeast(1))
+            srtFile.printWriter().use { pw ->
+                words.forEachIndexed { i, word ->
+                    val start = i * wordDur
+                    val end = ((i + 1) * wordDur).coerceAtMost(state.videoDuration.toFloat())
+                    val startStr = "%02d:%02d:%02d,%03d".format((start / 3600).toInt(), ((start % 3600) / 60).toInt(), (start % 60).toInt(), ((start - start.toInt()) * 1000).toInt())
+                    val endStr = "%02d:%02d:%02d,%03d".format((end / 3600).toInt(), ((end % 3600) / 60).toInt(), (end % 60).toInt(), ((end - end.toInt()) * 1000).toInt())
+                    pw.println("${i + 1}"); pw.println("$startStr --> $endStr"); pw.println(word); pw.println()
+                }
+            }
+
+            val subtitleOpts = FFmpegProcessor.ProcessOptions(
+                videoWidth = state.videoWidth, videoHeight = state.videoHeight,
+                subtitlePath = srtFile.absolutePath,
+                watermarkSize = state.fontSize.toInt(),
+                watermarkColor = "#FFFFFF",
+            )
+            val result = FFmpegProcessor.process(state.videoLocalPath!!, context, subtitleOpts)
+            if (result.success && result.outputPath != null) {
+                state = state.copy(isProcessing = false, processStatus = "", success = "✅ Subtitles burned!")
+            } else {
+                state = state.copy(isProcessing = false, processStatus = "", error = result.error ?: "Subtitle burn failed")
+            }
             loadCoins()
         }
     }

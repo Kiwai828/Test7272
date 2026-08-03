@@ -45,12 +45,30 @@ data class EditorState(
     val isAnalyzing: Boolean = false, val isProcessing: Boolean = false, val processStatus: String = "",
     val error: String? = null, val success: String? = null,
     val history: List<VideoHistoryEntity> = emptyList(), val showHistory: Boolean = false,
+    val videoEffects: VideoEffectsState = VideoEffectsState(),
+    val bgMusicUri: Uri? = null, val bgMusicVolume: Float = 0.3f, val autoDuck: Boolean = true,
+    val audioEffects: AudioEffectsState = AudioEffectsState(),
+    val extraClips: List<String> = emptyList(),
+    val subtitleEnabled: Boolean = false, val subtitleText: String = "",
+    val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
+)
+
+data class VideoEffectsState(
+    val grayscale: Boolean = false, val sepia: Boolean = false, val vignette: Boolean = false,
+    val brightness: Float = 1.0f, val contrast: Float = 1.0f,
+)
+
+data class AudioEffectsState(
+    val echo: Boolean = false, val reverb: Boolean = false, val bassBoost: Boolean = false,
+    val echoDelay: Float = 60f, val echoDecay: Float = 0.4f, val reverbAmount: Float = 0.3f, val bassAmount: Float = 3f,
 )
 
 @HiltViewModel
 class EditorViewModel @Inject constructor(private val repo: MainRepository, private val historyDao: VideoHistoryDao) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
-    init { loadCoins(); loadHistory() }
+    init { loadCoins(); loadHistory(); checkEdgeTts() }
+
+    private fun checkEdgeTts() { viewModelScope.launch { when (val r = repo.getEdgeTtsConfig()) { is Result.Success -> state = state.copy(edgeTtsAvailable = true); is Result.Error -> state = state.copy(edgeTtsAvailable = false) } } }
 
     private fun loadCoins() { viewModelScope.launch { when (val r = repo.getUserInfo()) { is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver, pricingTiers = r.data.pricing_tiers ?: emptyList()); is Result.Error -> {} } } }
     val costText: String get() { val d = state.videoDuration; if (d == 0 && state.videoLocalPath == null) return ""; val c = getCostForDuration(d, state.pricingTiers); if (c == -1) return "(ရှည်လွန်း)"; if (c == 0) return "(အခမဲ့)"; return if (state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)) "(🥇 $c Gold)" else "($c Coins)" }
@@ -90,6 +108,39 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun switchVoiceTab(t: String) { state = state.copy(voiceTab = t, voiceSearch = "") }
     fun setVoiceSearch(q: String) { state = state.copy(voiceSearch = q) }
 
+    // ═══ VIDEO EFFECTS ═══
+    fun setVideoEffectGrayscale(v: Boolean) { state = state.copy(videoEffects = state.videoEffects.copy(grayscale = v)) }
+    fun setVideoEffectSepia(v: Boolean) { state = state.copy(videoEffects = state.videoEffects.copy(sepia = v)) }
+    fun setVideoEffectVignette(v: Boolean) { state = state.copy(videoEffects = state.videoEffects.copy(vignette = v)) }
+    fun setVideoEffectBrightness(v: Float) { state = state.copy(videoEffects = state.videoEffects.copy(brightness = v)) }
+    fun setVideoEffectContrast(v: Float) { state = state.copy(videoEffects = state.videoEffects.copy(contrast = v)) }
+
+    // ═══ BACKGROUND MUSIC ═══
+    fun setBgMusicUri(uri: Uri?) { state = state.copy(bgMusicUri = uri) }
+    fun setBgMusicVolume(v: Float) { state = state.copy(bgMusicVolume = v) }
+    fun setAutoDuck(v: Boolean) { state = state.copy(autoDuck = v) }
+
+    // ═══ AUDIO EFFECTS ═══
+    fun setAudioEffectEcho(v: Boolean) { state = state.copy(audioEffects = state.audioEffects.copy(echo = v)) }
+    fun setAudioEffectReverb(v: Boolean) { state = state.copy(audioEffects = state.audioEffects.copy(reverb = v)) }
+    fun setAudioEffectBassBoost(v: Boolean) { state = state.copy(audioEffects = state.audioEffects.copy(bassBoost = v)) }
+    fun setEchoDelay(v: Float) { state = state.copy(audioEffects = state.audioEffects.copy(echoDelay = v)) }
+    fun setEchoDecay(v: Float) { state = state.copy(audioEffects = state.audioEffects.copy(echoDecay = v)) }
+    fun setReverbAmount(v: Float) { state = state.copy(audioEffects = state.audioEffects.copy(reverbAmount = v)) }
+    fun setBassAmount(v: Float) { state = state.copy(audioEffects = state.audioEffects.copy(bassAmount = v)) }
+
+    // ═══ MULTI-CLIP ═══
+    fun addExtraClip(path: String) { state = state.copy(extraClips = state.extraClips + path) }
+    fun removeExtraClip(path: String) { state = state.copy(extraClips = state.extraClips - path) }
+
+    // ═══ SUBTITLE ═══
+    fun setSubtitleEnabled(v: Boolean) { state = state.copy(subtitleEnabled = v) }
+    fun setSubtitleText(v: String) { state = state.copy(subtitleText = v) }
+
+    // ═══ EDGE TTS ═══
+    fun setUseEdgeTts(v: Boolean) { state = state.copy(useEdgeTts = v) }
+    fun setEdgeTtsAvailable(v: Boolean) { state = state.copy(edgeTtsAvailable = v) }
+
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }
     fun translateScript() { if (state.aiText.isBlank()) return; viewModelScope.launch { state = state.copy(isAnalyzing = true); when (val r = repo.analyzeText(text = state.aiText, instruction = "Translate to natural spoken Burmese. Output ONLY Burmese text.")) { is Result.Success -> state = state.copy(aiText = r.data.text ?: state.aiText, isAnalyzing = false); is Result.Error -> state = state.copy(isAnalyzing = false, error = "${r.message}") } } }
@@ -123,17 +174,41 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                 }
             } else if (cost == -1) { state = state.copy(isProcessing = false, processStatus = "", error = "Video ရှည်လွန်း"); return@launch }
 
-            // ── 2. TTS — chunked generation + concatenation ──
+            // ── 2. TTS ──
             var ttsAudioPath: String? = null
             if (state.aiText.isNotBlank()) {
-                ttsAudioPath = generateFullTtsAudio(context, state.aiText, state.selectedVoice, state.videoDuration)
+                ttsAudioPath = if (state.useEdgeTts && state.edgeTtsAvailable) {
+                    state = state.copy(processStatus = "Edge TTS generating...")
+                    generateEdgeTtsAudio(context, state.aiText, state.selectedVoice)
+                } else {
+                    generateFullTtsAudio(context, state.aiText, state.selectedVoice, state.videoDuration)
+                }
             }
 
-            // ── 3. Logo ──
+            // ── 3. SRT Subtitles ──
+            var srtPath: String? = null
+            if (state.subtitleEnabled && state.aiText.isNotBlank() && ttsAudioPath != null) {
+                state = state.copy(processStatus = "Generating SRT...")
+                srtPath = generateSrtFromTts(context, state.aiText, ttsAudioPath)
+            }
+
+            // ── 4. Logo ──
             var logoPath: String? = null
             state.logoUri?.let { uri -> val f = File(context.cacheDir, "logo_${System.currentTimeMillis()}.png"); if (uri.copyToFile(context, f) && f.exists()) logoPath = f.absolutePath }
 
-            // ── 4. Build options + start service ──
+            // ── 5. Background music ──
+            var bgMusicPath: String? = null
+            state.bgMusicUri?.let { uri ->
+                state = state.copy(processStatus = "Preparing background music...")
+                val f = File(context.cacheDir, "bgmusic_${System.currentTimeMillis()}.mp3")
+                if (uri.copyToFile(context, f) && f.exists()) {
+                    bgMusicPath = if (state.autoDuck && ttsAudioPath != null) {
+                        FFmpegProcessor.autoDuckAudio(f.absolutePath, ttsAudioPath, context) ?: f.absolutePath
+                    } else f.absolutePath
+                }
+            }
+
+            // ── 6. Build options + start service ──
             state = state.copy(processStatus = "Video processing...")
             val opts = FFmpegProcessor.ProcessOptions(
                 flip = state.flipEnabled, speed = state.speedEnabled, pitch = state.pitchEnabled, noise = state.noiseEnabled,
@@ -144,6 +219,9 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                 ttsAudioPath = ttsAudioPath, videoDurationSec = state.videoDuration,
                 videoWidth = state.videoWidth, videoHeight = state.videoHeight,
                 previewWidth = state.previewWidth, previewHeight = state.previewHeight,
+                videoEffects = state.videoEffects, bgMusicPath = bgMusicPath, bgMusicVolume = state.bgMusicVolume, autoDuck = state.autoDuck,
+                audioEffects = state.audioEffects, extraClips = state.extraClips,
+                subtitlePath = srtPath,
             )
 
             VideoProcessService.reset()
@@ -154,12 +232,11 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                 val intent = Intent(context, VideoProcessService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
             } catch (e: Exception) {
-                // Fallback: direct process
                 Log.e("Editor", "Service start fail: ${e.message}, fallback direct")
                 state = state.copy(processStatus = "Direct processing...")
                 val result = FFmpegProcessor.process(inputPath, context, opts)
                 finishProcess(result, cost, coinTypeUsed)
-                cleanup(ttsAudioPath, logoPath); return@launch
+                cleanup(ttsAudioPath, logoPath, bgMusicPath, srtPath); return@launch
             }
 
             delay(1000)
@@ -178,7 +255,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                 historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
                 state = state.copy(isProcessing = false, processStatus = "", error = VideoProcessService.resultMessage ?: "Failed")
             }
-            loadHistory(); cleanup(ttsAudioPath, logoPath); VideoProcessService.reset()
+            loadHistory(); cleanup(ttsAudioPath, logoPath, bgMusicPath, srtPath); VideoProcessService.reset()
         }
     }
 
@@ -300,6 +377,39 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     }
 
     private fun cleanup(vararg paths: String?) { paths.filterNotNull().forEach { try { File(it).delete() } catch (_: Exception) {} } }
+
+    private suspend fun generateEdgeTtsAudio(context: Context, text: String, voice: String): String? {
+        val cfg = repo.getEdgeTtsConfig()
+        val (key, region) = when (cfg) { is Result.Success -> cfg.data; is Result.Error -> { state = state.copy(processStatus = "", error = "Edge TTS: ${cfg.message}"); return null } }
+        val r = repo.edgeTtsDirect(text, voice, key, region)
+        return when (r) {
+            is Result.Success -> r.data.absolutePath
+            is Result.Error -> { state = state.copy(processStatus = "", error = "Edge TTS: ${r.message}"); null }
+        }
+    }
+
+    private suspend fun generateSrtFromTts(context: Context, text: String, audioPath: String): String? {
+        val chunks = splitTextIntoChunks(text, 200)
+        val srtFile = File(context.cacheDir, "subtitles_${System.currentTimeMillis()}.srt")
+        try {
+            val audioDur = FFmpegProcessor.getAudioDuration(audioPath)
+            val chunkDur = audioDur / chunks.size.coerceAtLeast(1)
+            srtFile.printWriter().use { pw ->
+                chunks.forEachIndexed { i, chunk ->
+                    val start = (i * chunkDur).coerceAtMost(audioDur - 0.1)
+                    val end = ((i + 1) * chunkDur).coerceAtMost(audioDur)
+                    val startStr = formatSrtTime(start); val endStr = formatSrtTime(end)
+                    pw.println("${i + 1}"); pw.println("$startStr --> $endStr"); pw.println(chunk.trim()); pw.println()
+                }
+            }
+        } catch (e: Exception) { return null }
+        return if (srtFile.exists() && srtFile.length() > 0) srtFile.absolutePath else null
+    }
+
+    private fun formatSrtTime(sec: Double): String {
+        val h = (sec / 3600).toInt(); val m = ((sec % 3600) / 60).toInt(); val s = (sec % 60).toInt(); val ms = ((sec - sec.toInt()) * 1000).toInt()
+        return "%02d:%02d:%02d,%03d".format(h, m, s, ms)
+    }
 
     // ═══ HISTORY ═══
     fun loadHistory() { viewModelScope.launch { historyDao.getAll().collect { state = state.copy(history = it) } } }

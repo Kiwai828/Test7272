@@ -35,6 +35,7 @@ data class ConfigResponse(
     val status: String = "", val maintenance_mode: Boolean = false,
     val pricing_tiers: List<PricingTier>? = null,
     val packages: List<CoinPackage>? = null, val payment_message: String? = null,
+    val edge_tts_key: String? = null, val edge_tts_region: String? = "eastus",
 )
 
 data class CoinResponse(

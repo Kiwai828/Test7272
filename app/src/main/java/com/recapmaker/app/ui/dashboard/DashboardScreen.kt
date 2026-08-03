@@ -29,22 +29,29 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
     var showCheckin by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(DarkBg).verticalScroll(rememberScrollState())) {
-        // ── Top bar ──
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Recap Maker", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Purple)
-                Text("Hello, ${s.username}", fontSize = 13.sp, color = TextDim)
-            }
-            CoinBadge(s.gold, s.silver)
-            Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, null, tint = TextDim) }
-        }
+        Box(modifier = Modifier.fillMaxWidth().height(320.dp)) {
+            AnimatedGradientBackground(modifier = Modifier.fillMaxSize(), enabled = true)
+            Column(Modifier.fillMaxSize()) {
+                // ── Top bar ──
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Recap Maker", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Purple)
+                        Text("Hello, ${s.username}", fontSize = 13.sp, color = TextDim)
+                    }
+                    CoinBadge(s.gold, s.silver)
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, null, tint = TextDim) }
+                }
 
-        // ── Coin cards (tappable) ──
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CoinCard("🥇 Gold", s.gold, Gold, Modifier.weight(1f)) { showPackages = true }
-            CoinCard("🥈 Silver", s.silver, SilverColor, Modifier.weight(1f)) { showCheckin = true }
-        }
+                // ── Coin cards (tappable) ──
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PulseGlow(Gold, visible = true, modifier = Modifier.weight(1f)) {
+                        CoinCard("🥇 Gold", s.gold, Gold, Modifier.weight(1f)) { showPackages = true }
+                    }
+                    PulseGlow(SilverColor, visible = true, modifier = Modifier.weight(1f)) {
+                        CoinCard("🥈 Silver", s.silver, SilverColor, Modifier.weight(1f)) { showCheckin = true }
+                    }
+                }
 
         Spacer(Modifier.height(12.dp))
 
@@ -76,8 +83,12 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
         Spacer(Modifier.height(12.dp))
 
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionCard("Video Editor", "Flip, blur, TTS, watermark", Icons.Default.VideoSettings, Purple, Modifier.weight(1f)) { onEditor() }
-            ActionCard("Subtitles", "Auto-generate & burn", Icons.Default.Subtitles, Emerald, Modifier.weight(1f)) { onSubtitle() }
+            PulseGlow(Purple, visible = true, modifier = Modifier.weight(1f)) {
+                ActionCard("Video Editor", "Flip, blur, TTS, watermark", Icons.Default.VideoSettings, Purple, Modifier.weight(1f)) { onEditor() }
+            }
+            PulseGlow(Emerald, visible = true, modifier = Modifier.weight(1f)) {
+                ActionCard("Subtitles", "Auto-generate & burn", Icons.Default.Subtitles, Emerald, Modifier.weight(1f)) { onSubtitle() }
+            }
         }
 
         Spacer(Modifier.height(12.dp))

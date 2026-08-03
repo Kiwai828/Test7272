@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
                         val vm: AuthViewModel = hiltViewModel()
                         RegisterScreen(vm,
                             onLogin = { vm.resetState(); nav.popBackStack() },
-                            onSuccess = { nav.navigate("dashboard") { popUpTo(0) { inclusive = true } } },
+                            onSuccess = { nav.navigate("dashboard") { popUpTo("login") { inclusive = true } } },
                         )
                     }
 

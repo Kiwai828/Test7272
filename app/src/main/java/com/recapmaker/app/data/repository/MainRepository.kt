@@ -6,6 +6,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.ResponseBody
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -60,4 +61,49 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         val r = api.getPackages()
         if (r.isSuccessful) Result.Success(r.body() ?: emptyList()) else Result.Error("Failed")
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
+
+    suspend fun getEdgeTtsConfig(): Result<Pair<String, String>> = try {
+        val r = api.getConfig()
+        if (r.isSuccessful) {
+            val body = r.body()!!
+            val key = body.edge_tts_key ?: ""
+            val region = body.edge_tts_region ?: "eastus"
+            if (key.isNotBlank()) Result.Success(key to region) else Result.Error("No Edge TTS key configured")
+        } else Result.Error("Failed to load config")
+    } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
+
+    suspend fun edgeTtsDirect(text: String, voice: String, apiKey: String, region: String = "eastus"): Result<File> = try {
+        val client = okhttp3.OkHttpClient()
+        val ssml = """
+            <speak version='1.0' xml:lang='my-MM'>
+                <voice xml:lang='my-MM' xml:gender='Male' name='${voice}'>
+                    $text
+                </voice>
+            </speak>
+        """.trimIndent()
+
+        val tokenReq = okhttp3.Request.Builder()
+            .url("https://$region.api.cognitive.microsoft.com/sts/v1.0/issueToken")
+            .addHeader("Ocp-Apim-Subscription-Key", apiKey)
+            .post(okhttp3.RequestBody.create(null, ByteArray(0)))
+            .build()
+        val tokenResp = client.newCall(tokenReq).execute()
+        if (!tokenResp.isSuccessful) return Result.Error("Token request failed: ${tokenResp.code}")
+        val token = tokenResp.body?.string() ?: return Result.Error("Empty token")
+        tokenResp.close()
+
+        val ttsReq = okhttp3.Request.Builder()
+            .url("https://$region.tts.speech.microsoft.com/cognitiveservices/v1")
+            .addHeader("Authorization", "Bearer $token")
+            .addHeader("Content-Type", "application/ssml+xml")
+            .addHeader("X-Microsoft-OutputFormat", "audio-16khz-32kbitrate-mono-mp3")
+            .post(ssml.toRequestBody("application/ssml+xml".toMediaType()))
+            .build()
+        val ttsResp = client.newCall(ttsReq).execute()
+        if (!ttsResp.isSuccessful) return Result.Error("TTS failed: ${ttsResp.code} ${ttsResp.message}")
+        val outFile = File.createTempFile("edge_tts_", ".mp3")
+        ttsResp.body?.byteStream()?.use { input -> outFile.outputStream().use { output -> input.copyTo(output) } }
+        ttsResp.close()
+        if (outFile.length() > 0) Result.Success(outFile) else Result.Error("Empty audio response")
+    } catch (e: Exception) { Result.Error(e.message ?: "Edge TTS error") }
 }

@@ -28,10 +28,12 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
     var confirmPw by remember { mutableStateOf("") }
     val fm = LocalFocusManager.current
 
-    LaunchedEffect(s.passwordReset) { if (s.passwordReset) { vm.resetState(); onBack() } }
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize().background(DarkBg)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffset = { -it / 4 }), exit = fadeOut()) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary, modifier = Modifier.clickable { vm.resetState(); onBack() }.padding(8.dp))
             }
