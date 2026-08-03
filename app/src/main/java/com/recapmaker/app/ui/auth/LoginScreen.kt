@@ -47,5 +47,6 @@ fun LoginScreen(vm: AuthViewModel, onRegister: () -> Unit, onForgot: () -> Unit,
                 Text("Register", color = Purple, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { onRegister() })
             }
         }
+        }
     }
 }

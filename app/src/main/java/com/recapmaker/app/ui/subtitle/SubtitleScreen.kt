@@ -135,4 +135,5 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
             }
         }
     }
+    }
 }

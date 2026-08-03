@@ -202,14 +202,14 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         }
                     }
                     AnimatedVisibility(ae.reverb) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Amount", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
                             Slider(ae.reverbAmount, { vm.setReverbAmount(it) }, valueRange = 0.1f..0.8f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Rose, activeTrackColor = Rose))
                             Text("${"%.1f".format(ae.reverbAmount)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                         }
                     }
                     AnimatedVisibility(ae.bassBoost) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Gain", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
                             Slider(ae.bassAmount, { vm.setBassAmount(it) }, valueRange = 1f..10f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
                             Text("${ae.bassAmount.toInt()}dB", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
@@ -322,5 +322,6 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                 }
             }
         }
+    }
     }
 }

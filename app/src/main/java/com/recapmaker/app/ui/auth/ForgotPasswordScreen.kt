@@ -59,5 +59,6 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
                 PrimaryButton("Reset Password", { fm.clearFocus(); vm.resetPassword(email.trim(), code.trim(), newPw, confirmPw) }, s.isLoading, color = Emerald)
             }
         }
+        }
     }
 }
