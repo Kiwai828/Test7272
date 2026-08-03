@@ -72,6 +72,37 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     if (s.videoUri != null) { Spacer(Modifier.height(8.dp)); VideoPreviewPlayer(uri = s.videoUri!!) { cs -> vm.updatePreviewSize(cs.width, cs.height); if (s.blurEnabled) s.blurAreas.forEachIndexed { i, _ -> DraggableBox(cs, .1f+i*.08f, .1f+i*.08f, .3f, .2f, Rose, "Blur ${i+1}", { vm.removeBlurBox(i) }) { vm.updateBlurBox(i, it) } }; if (s.logoUri != null) DraggableBox(cs, .05f, .05f, .15f, .15f, Emerald, "Logo") { vm.updateLogoArea(it) } }; if (s.videoDuration > 0) Text("Duration: ${s.videoDuration/60}:${"%02d".format(s.videoDuration%60)} • ${s.videoWidth}x${s.videoHeight}", color = Emerald, fontSize = 11.sp) }
                 }
 
+                // ═══ TRIM ═══
+                SectionCard("Trim & Split", Icons.Default.ContentCut, Purple) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = s.trimStartSec.toString(),
+                            onValueChange = { vm.setTrimStartSec(it.toIntOrNull() ?: 0) },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Start (s)", fontSize = 12.sp) },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(androidx.compose.ui.text.input.KeyboardType.Number),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        OutlinedTextField(
+                            value = s.trimEndSec.toString(),
+                            onValueChange = { vm.setTrimEndSec(it.toIntOrNull() ?: 0) },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("End (s)", fontSize = 12.sp) },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(androidx.compose.ui.text.input.KeyboardType.Number),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    if (s.trimStartSec > 0 || s.trimEndSec > s.trimStartSec) {
+                        val dur = if (s.trimEndSec > s.trimStartSec) s.trimEndSec - s.trimStartSec else s.videoDuration
+                        Text("Trimmed duration: ${dur}s", color = Emerald, fontSize = 11.sp)
+                    }
+                }
+
                 // ═══ 2. EFFECTS ═══
                 SectionCard("၂. Effect များ", Icons.Default.Tune, Purple) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

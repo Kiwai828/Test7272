@@ -42,6 +42,8 @@ object FFmpegProcessor {
         val audioEffects: AudioEffectsState = AudioEffectsState(),
         val extraClips: List<String> = emptyList(),
         val subtitlePath: String? = null,
+        val trimStartSec: Int = 0,
+        val trimEndSec: Int = 0,
     )
 
     data class VideoEffectsState(
@@ -310,15 +312,20 @@ object FFmpegProcessor {
         val hasAnyFilter = hasAnyVideoFilter || hasAnyAudioFilter || hasLogo || hasTts || hasBgMusic || hasSubtitle
 
         if (!hasAnyFilter) {
-            return "-i $input -c copy -y $output"
+            val ss = if (opts.trimStartSec > 0) "-ss ${opts.trimStartSec} " else ""
+            val dur = if (opts.trimEndSec > opts.trimStartSec) "-t ${opts.trimEndSec - opts.trimStartSec} " else ""
+            return "$ss-i $input $dur-c copy -y $output"
         }
 
         val sb = StringBuilder()
+        if (opts.trimStartSec > 0) sb.append("-ss ${opts.trimStartSec} ")
         sb.append("-i $input ")
         var inputIdx = 1
         val logoIdx = if (hasLogo) { sb.append("-i ${opts.logoPath} "); val i = inputIdx; inputIdx++; i } else -1
         val ttsIdx  = if (hasTts)  { sb.append("-i ${opts.ttsAudioPath} "); val i = inputIdx; inputIdx++; i } else -1
         val bgIdx = if (hasBgMusic) { sb.append("-i ${opts.bgMusicPath} "); val i = inputIdx; inputIdx++; i } else -1
+
+        if (opts.trimEndSec > opts.trimStartSec) sb.append("-t ${opts.trimEndSec - opts.trimStartSec} ")
 
         val needFilterComplex = hasLogo || hasAnyAudioFilter || hasBgMusic || hasSubtitle || (hasTts && hasAnyVideoFilter)
 
