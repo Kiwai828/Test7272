@@ -1,6 +1,7 @@
 package com.recapmaker.app.ui.editor
 
 import android.net.Uri
+import android.content.Intent
 import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
 import com.recapmaker.app.ui.common.*
 
 @Composable
@@ -39,6 +41,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onLogoSelected(it) } }
     val extraClipPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.addExtraClip(it.toString()) } }
+    val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -100,6 +103,35 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     if (s.trimStartSec > 0 || s.trimEndSec > s.trimStartSec) {
                         val dur = if (s.trimEndSec > s.trimStartSec) s.trimEndSec - s.trimStartSec else s.videoDuration
                         Text("Trimmed duration: ${dur}s", color = Emerald, fontSize = 11.sp)
+                    }
+                }
+
+                // ═══ THUMBNAIL ═══
+                SectionCard("Thumbnail", Icons.Default.PhotoCamera, Purple) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.generateThumbnail(ctx) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Purple.copy(.3f))) {
+                            Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp), tint = Purple)
+                            Spacer(Modifier.width(6.dp)); Text("Generate", fontSize = 12.sp, color = Purple)
+                        }
+                        IconButton(onClick = {
+                            val tp = s.thumbnailPath ?: return@IconButton
+                            val uri = Uri.fromFile(File(tp))
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            shareLauncher.launch(Intent.createChooser(intent, "Share thumbnail via"))
+                        }, enabled = s.thumbnailPath != null) {
+                            Icon(Icons.Default.Share, null, tint = if (s.thumbnailPath != null) TextPrimary else TextDim, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    AnimatedVisibility(s.thumbnailPath != null) {
+                        Column(Modifier.padding(top = 8.dp)) {
+                            AsyncImage(model = s.thumbnailPath, contentDescription = "Thumbnail", modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)), alignment = Alignment.Center)
+                            Text("Thumbnail ready", color = Emerald, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                    AnimatedVisibility(s.thumbnailPath == null && !s.isProcessing) {
+                        Text("Generate a thumbnail from the current video", color = TextDim, fontSize = 11.sp)
                     }
                 }
 

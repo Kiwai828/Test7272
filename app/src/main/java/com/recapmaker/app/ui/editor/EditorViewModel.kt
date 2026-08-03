@@ -56,6 +56,7 @@ data class EditorState(
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
     val trimStartSec: Int = 0, val trimEndSec: Int = 0, val showTrimPopup: Boolean = false,
+    val thumbnailPath: String? = null,
 )
 
 @HiltViewModel
@@ -143,6 +144,19 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun setTrimStartSec(v: Int) { state = state.copy(trimStartSec = v) }
     fun setTrimEndSec(v: Int) { state = state.copy(trimEndSec = v) }
     fun setShowTrimPopup(v: Boolean) { state = state.copy(showTrimPopup = v) }
+
+    // ═══ THUMBNAIL ═══
+    fun generateThumbnail(ctx: Context) {
+        val path = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }
+        viewModelScope.launch {
+            state = state.copy(error = null)
+            val out = File(ctx.cacheDir, "thumb_${System.currentTimeMillis()}.jpg")
+            val timeSec = if (state.trimStartSec > 0) state.trimStartSec.toDouble() else 0.0
+            val ok = FFmpegProcessor.extractThumbnail(path, out.absolutePath, timeSec)
+            if (ok && out.exists()) state = state.copy(thumbnailPath = out.absolutePath)
+            else state = state.copy(error = "Thumbnail generate မရ")
+        }
+    }
 
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }

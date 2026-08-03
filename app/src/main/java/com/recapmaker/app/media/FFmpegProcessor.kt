@@ -467,4 +467,16 @@ object FFmpegProcessor {
             null
         }
     }
+
+    // ─────────────────────────────────────────
+    // Thumbnail extraction
+    // ─────────────────────────────────────────
+    suspend fun extractThumbnail(videoPath: String, outputPath: String, timeSec: Double = 0.0): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val cmd = "-ss $timeSec -i $videoPath -vframes 1 -y $outputPath"
+                val session = FFmpegKit.execute(cmd)
+                ReturnCode.isSuccess(session.returnCode) && File(outputPath).exists() && File(outputPath).length() > 0
+            } catch (_: Exception) { false }
+        }
 }
