@@ -327,8 +327,8 @@ fun DraggableBox(
             .border(2.dp, borderColor.copy(0.6f), RoundedCornerShape(4.dp))
             .background(borderColor.copy(0.15f), RoundedCornerShape(4.dp))
             .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        offsetX = (offsetX + dragAmount.x).coerceIn(0f, (containerSize.width - boxW).coerceAtLeast(0f))
+                detectDragGestures { change, dragAmount ->
+                    offsetX = (offsetX + dragAmount.x).coerceIn(0f, (containerSize.width - boxW).coerceAtLeast(0f))
                     offsetY = (offsetY + dragAmount.y).coerceIn(0f, (containerSize.height - boxH).coerceAtLeast(0f))
                     emitCoords()
                 }
