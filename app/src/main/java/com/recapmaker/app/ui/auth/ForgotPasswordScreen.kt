@@ -61,3 +61,4 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
         }
     }
 }
+}

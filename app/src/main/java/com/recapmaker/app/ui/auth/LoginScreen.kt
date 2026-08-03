@@ -49,3 +49,4 @@ fun LoginScreen(vm: AuthViewModel, onRegister: () -> Unit, onForgot: () -> Unit,
         }
     }
 }
+}

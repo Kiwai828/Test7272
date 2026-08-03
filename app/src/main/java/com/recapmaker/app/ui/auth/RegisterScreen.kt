@@ -56,3 +56,4 @@ fun RegisterScreen(vm: AuthViewModel, onLogin: () -> Unit, onSuccess: () -> Unit
         }
     }
 }
+}
