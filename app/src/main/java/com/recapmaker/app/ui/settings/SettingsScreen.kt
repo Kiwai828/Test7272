@@ -36,7 +36,7 @@ fun SettingsScreen(
     // Close dialogs on success
     LaunchedEffect(s.linkEmailDone) {
         if (s.linkEmailDone) {
-            currentEmail = s.let { "" } // will refresh from server
+            currentEmail = email ?: "" // will refresh from server
             showLinkEmail = false
             vm.resetLinkEmailDone()
         }
@@ -256,3 +256,4 @@ private fun SettingsItem(icon: ImageVector, title: String, subtitle: String, onC
         Icon(Icons.Default.ChevronRight, null, tint = TextDim)
     }
 }
+
