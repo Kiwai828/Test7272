@@ -98,10 +98,11 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                                         EffectToggle("ရွေ့လျား Scroll", Icons.Default.SwapHorizontalCircle, s.wmScroll) { vm.setWmScroll(it) }
                                         EffectToggle("နောက်ခံ Box", Icons.Default.CheckBoxOutlineBlank, s.wmBox) { vm.setWmBox(it) }
                                         AnimatedVisibility(s.wmBox) { Column { Text("Box Opacity: ${"%.1f".format(s.wmBoxOpacity)}", color = TextDim, fontSize = 12.sp); Slider(s.wmBoxOpacity, { vm.setWmBoxOpacity(it) }, valueRange = 0.1f..1f, colors = SliderDefaults.colors(thumbColor = Purple, activeTrackColor = Purple)) } }
-                                    }
-                                }
-                            }
-                        }
+                }
+            }
+        }
+        }
+    }
                     }
                 }
 

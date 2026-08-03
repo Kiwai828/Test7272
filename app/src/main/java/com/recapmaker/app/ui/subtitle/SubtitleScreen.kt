@@ -127,8 +127,9 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                                     }
                                     if (fmt.fileSize > 0) Text("${"%.1f".format(fmt.fileSize / (1024.0 * 1024.0))}MB", color = TextDim, fontSize = 11.sp)
                                     Spacer(Modifier.width(8.dp)); Icon(Icons.Default.Download, null, tint = TextDim, modifier = Modifier.size(16.dp))
-                                }
-                            }
+                 }
+        }
+    }
                         }
                     }
                 }

@@ -52,6 +52,8 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
                         CoinCard("🥈 Silver", s.silver, SilverColor, Modifier.weight(1f)) { showCheckin = true }
                     }
                 }
+        }
+        }
 
         Spacer(Modifier.height(12.dp))
 
