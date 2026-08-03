@@ -34,7 +34,7 @@ data class SubtitleState(
     val fontColor: String = "#FFFFFF", val fontSize: Float = 16f,
     val boxEnabled: Boolean = true, val position: String = "bottom_center",
     val isProcessing: Boolean = false, val processStatus: String = "", val success: String? = null,
-    val error: String? = null,
+    val error: String? = null, val thumbnailPath: String? = null,
 )
 
 @HiltViewModel
@@ -53,7 +53,7 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
 
     fun onVideoSelected(uri: Uri, context: Context) {
         viewModelScope.launch {
-            state = state.copy(videoUri = uri, error = null)
+            state = state.copy(videoUri = uri, error = null, thumbnailPath = null)
             try {
                 val temp = File(context.cacheDir, "sub_in_${System.currentTimeMillis()}.mp4")
                 uri.copyToFile(context, temp)
@@ -99,6 +99,16 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
     fun setFontColor(c: String) { state = state.copy(fontColor = c) }
     fun toggleBox(v: Boolean) { state = state.copy(boxEnabled = v) }
     fun setPosition(p: String) { state = state.copy(position = p) }
+    fun generateThumbnail(ctx: Context, timeSec: Double) {
+        val path = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }
+        viewModelScope.launch {
+            state = state.copy(error = null)
+            val out = File(ctx.cacheDir, "thumb_${System.currentTimeMillis()}.jpg")
+            val ok = FFmpegProcessor.extractThumbnail(path, out.absolutePath, timeSec)
+            if (ok && out.exists()) state = state.copy(thumbnailPath = out.absolutePath)
+            else state = state.copy(error = "Frame extract မရ")
+        }
+    }
 
     fun startProcessing(context: Context) {
         if (state.videoLocalPath == null) { state = state.copy(error = "Video ရွေးပါ"); return }
@@ -163,4 +173,5 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
     }
 
     fun clearError() { state = state.copy(error = null) }
+    fun clearThumbnail() { state = state.copy(thumbnailPath = null) }
 }

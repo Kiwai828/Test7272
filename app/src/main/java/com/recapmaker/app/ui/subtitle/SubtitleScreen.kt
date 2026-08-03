@@ -1,6 +1,8 @@
 package com.recapmaker.app.ui.subtitle
 
 import android.net.Uri
+import android.content.Intent
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -25,12 +27,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
 import com.recapmaker.app.ui.common.*
 
 @Composable
 fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) {
     val s = vm.state; val ctx = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
+    val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    var thumbnailTime by remember { mutableStateOf("0") }
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -75,6 +80,51 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
                         }
                     }
                     if (s.videoUri != null) { Spacer(Modifier.height(8.dp)); VideoPreviewPlayer(uri = s.videoUri!!) {} }
+                }
+
+                // ═══ THUMBNAIL ═══
+                SectionCard("Frame Extraction", Icons.Default.PhotoCamera, Emerald) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = thumbnailTime,
+                            onValueChange = { thumbnailTime = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Time (seconds)", fontSize = 12.sp) },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(androidx.compose.ui.text.input.KeyboardType.Number),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Emerald, unfocusedBorderColor = CardBorder, cursorColor = Emerald),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        OutlinedButton(onClick = {
+                            val t = thumbnailTime.toDoubleOrNull() ?: 0.0
+                            vm.generateThumbnail(ctx, t)
+                        }, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f))) {
+                            Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp), tint = Emerald)
+                            Spacer(Modifier.width(4.dp)); Text("Extract", fontSize = 12.sp, color = Emerald)
+                        }
+                    }
+                    AnimatedVisibility(s.thumbnailPath != null) {
+                        Column(Modifier.padding(top = 8.dp)) {
+                            AsyncImage(model = s.thumbnailPath, contentDescription = "Frame", modifier = Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(12.dp)), alignment = Alignment.Center)
+                            Spacer(Modifier.height(6.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = {
+                                    val tp = s.thumbnailPath ?: return@OutlinedButton
+                                    val uri = Uri.fromFile(File(tp))
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    shareLauncher.launch(Intent.createChooser(intent, "Share frame via"))
+                                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f))) {
+                                    Icon(Icons.Default.Share, null, modifier = Modifier.size(14.dp), tint = Emerald)
+                                    Spacer(Modifier.width(4.dp)); Text("Share", fontSize = 12.sp, color = Emerald)
+                                }
+                                IconButton(onClick = { vm.clearThumbnail() }) {
+                                    Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
                 }
 
                 SectionCard("Subtitle Style", Icons.Default.FormatSize, Purple) {
