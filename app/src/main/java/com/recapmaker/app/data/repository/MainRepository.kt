@@ -106,6 +106,6 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         ttsResp.body?.byteStream()?.use { input -> outFile.outputStream().use { output -> input.copyTo(output) } }
         ttsResp.close()
         if (outFile.length() > 0) Result.Success(outFile) else Result.Error("Empty audio response")
-    } catch (e: Exception) { Result.Error(e.message ?: "Edge TTS error") }
+    } catch (e: Exception) { return Result.Error(e.message ?: "Edge TTS error") }
     }
 }
