@@ -1,5 +1,7 @@
 package com.recapmaker.app.ui.auth
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -30,7 +32,7 @@ fun RegisterScreen(vm: AuthViewModel, onLogin: () -> Unit, onSuccess: () -> Unit
     LaunchedEffect(Unit) { visible = true }
 
     Box(Modifier.fillMaxSize().background(DarkBg), contentAlignment = Alignment.Center) {
-        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500), initialOffset = { it / 3 }), exit = fadeOut()) {
+        AnimatedVisibility(visible, enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500), initialOffsetY = { it / 3 }), exit = fadeOut()) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(48.dp))
             Text("🎬", fontSize = 48.sp)
@@ -54,6 +56,6 @@ fun RegisterScreen(vm: AuthViewModel, onLogin: () -> Unit, onSuccess: () -> Unit
             }
             Spacer(Modifier.height(32.dp))
         }
+        }
     }
-}
 }

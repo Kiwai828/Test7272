@@ -45,11 +45,11 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
 
                 // ── Coin cards (tappable) ──
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PulseGlow(Gold, visible = true, modifier = Modifier.weight(1f)) {
-                        CoinCard("🥇 Gold", s.gold, Gold, Modifier.weight(1f)) { showPackages = true }
+                    PulseGlow(Gold, visible = true, modifier = Modifier.Companion.weight(1f)) {
+                        CoinCard("🥇 Gold", s.gold, Gold, Modifier.Companion.weight(1f)) { showPackages = true }
                     }
-                    PulseGlow(SilverColor, visible = true, modifier = Modifier.weight(1f)) {
-                        CoinCard("🥈 Silver", s.silver, SilverColor, Modifier.weight(1f)) { showCheckin = true }
+                    PulseGlow(SilverColor, visible = true, modifier = Modifier.Companion.weight(1f)) {
+                        CoinCard("🥈 Silver", s.silver, SilverColor, Modifier.Companion.weight(1f)) { showCheckin = true }
                     }
                 }
 
@@ -75,6 +75,7 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
                 }
             }
         }
+    }
 
         Spacer(Modifier.height(20.dp))
 
@@ -83,11 +84,11 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
         Spacer(Modifier.height(12.dp))
 
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PulseGlow(Purple, visible = true, modifier = Modifier.weight(1f)) {
-                ActionCard("Video Editor", "Flip, blur, TTS, watermark", Icons.Default.VideoSettings, Purple, Modifier.weight(1f)) { onEditor() }
+            PulseGlow(Purple, visible = true, modifier = Modifier.Companion.weight(1f)) {
+                ActionCard("Video Editor", "Flip, blur, TTS, watermark", Icons.Default.VideoSettings, Purple, Modifier.Companion.weight(1f)) { onEditor() }
             }
-            PulseGlow(Emerald, visible = true, modifier = Modifier.weight(1f)) {
-                ActionCard("Subtitles", "Auto-generate & burn", Icons.Default.Subtitles, Emerald, Modifier.weight(1f)) { onSubtitle() }
+            PulseGlow(Emerald, visible = true, modifier = Modifier.Companion.weight(1f)) {
+                ActionCard("Subtitles", "Auto-generate & burn", Icons.Default.Subtitles, Emerald, Modifier.Companion.weight(1f)) { onSubtitle() }
             }
         }
 
@@ -132,6 +133,7 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
     if (showCheckin) {
         CheckinDialog(s.checkedInToday, s.checkinSilver, s.isLoading, { vm.dailyCheckin() }) { showCheckin = false }
     }
+}
 }
 
 // ── Coin Card ──
@@ -200,10 +202,8 @@ private fun PackagesDialog(packages: List<CoinPackage>, paymentMessage: String, 
                                 Surface(color = Gold.copy(0.15f), shape = RoundedCornerShape(8.dp)) {
                                     Text(pkg.displayPrice, color = Gold, fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-    }
-}
-}
-}
+                                }
+                            }
                         }
                     }
                 }
