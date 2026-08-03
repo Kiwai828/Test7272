@@ -2,8 +2,10 @@ package com.recapmaker.app.ui.common
 
 import android.net.Uri
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +18,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -37,6 +42,12 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import com.recapmaker.app.data.model.BlurArea
+import com.recapmaker.app.data.model.VoiceGender
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -364,16 +375,18 @@ fun ShimmerEffect(show: Boolean = true, modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val offset by transition.animateFloat(initialValue = -300f, targetValue = 300f, animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Reverse), label = "shimmerOffset")
     Box(modifier = modifier.fillMaxSize()) {
-        Box(modifier = Modifier.offset(x = offset.dp).fillMaxHeight().width(120.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.08f), Color.Transparent), TileMode.Clamp)))
+        Box(modifier = Modifier.offset(x = offset.dp).fillMaxHeight().width(120.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.08f), Color.Transparent))))
     }
 }
 
 @Composable
-fun PulseGlow(color: Color, visible: Boolean = true, modifier: Modifier = Modifier) {
+fun PulseGlow(color: Color, visible: Boolean = true, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     if (!visible) return
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alpha by infiniteTransition.animateFloat(initialValue = 0.3f, targetValue = 0.8f, animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOut), RepeatMode.Reverse), label = "pulseAlpha")
-    Box(modifier = modifier.shadow(alpha * 24.dp, RoundedCornerShape(16.dp), spotColor = color.copy(alpha = alpha)))
+    Box(modifier = modifier.shadow(alpha * 24.dp, RoundedCornerShape(16.dp), spotColor = color.copy(alpha = alpha))) {
+        content()
+    }
 }
 
 @Composable
@@ -381,7 +394,7 @@ fun AnimatedGradientBackground(modifier: Modifier = Modifier, enabled: Boolean =
     if (!enabled) { Box(modifier = modifier.background(DarkBg)); return }
     val infiniteTransition = rememberInfiniteTransition(label = "gradient")
     val rotation by infiniteTransition.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing), RepeatMode.Restart), label = "gradientRotation")
-    Box(modifier = modifier.background(Brush.sweepGradient(listOf(Purple.copy(0.15f), Emerald.copy(0.1f), PurpleDark.copy(0.12f), Color.Transparent), Alignment.Center).rotate(rotation)))
+    Box(modifier = modifier.background(Brush.sweepGradient(listOf(Purple.copy(0.15f), Emerald.copy(0.1f), PurpleDark.copy(0.12f), Color.Transparent)).rotate(rotation)))
 }
 
 @Composable

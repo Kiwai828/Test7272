@@ -204,7 +204,7 @@ object FFmpegProcessor {
             var prev = "[0:v]"
             for (i in 1 until allClips.size) {
                 val offset = (i * 3.0)
-                filterParts.add("${prev}[${labelMap[i].substringAfter('[').substringBefore(']')}:v]xfade=transition=fade:duration=$fadeDur:offset=$offset[xf$i]")
+                filterParts.add("${prev}[${labelMap[i]!!.substringAfter('[').substringBefore(']')}:v]xfade=transition=fade:duration=$fadeDur:offset=$offset[xf$i]")
                 prev = "[xf$i]"
             }
             filterParts.add("$prev[vout]")

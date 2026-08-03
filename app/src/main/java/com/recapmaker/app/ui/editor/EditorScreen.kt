@@ -1,9 +1,11 @@
 package com.recapmaker.app.ui.editor
 
 import android.net.Uri
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -35,6 +38,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     val s = vm.state; val ctx = LocalContext.current
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onLogoSelected(it) } }
+    val extraClipPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.addExtraClip(it.toString()) } }
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -220,7 +224,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                 // ═══ 5-D. MULTI-CLIP ═══
                 SectionCard("Multi-Clip Joiner", Icons.Default.VideoLibrary, Emerald) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton({ val picker = androidx.activity.compose.ActivityResultRegistryPickVisualMedia(); picker.launch("video/*") { it?.let { vm.addExtraClip(it.toString()) } } }, Modifier.weight(1f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f))) {
+                        OutlinedButton({ extraClipPicker.launch("video/*") }, Modifier.weight(1f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f))) {
                             Icon(Icons.Default.Add, null, tint = Emerald, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Add clip (${s.extraClips.size})", fontSize = 12.sp, color = Emerald)
                         }
                     }

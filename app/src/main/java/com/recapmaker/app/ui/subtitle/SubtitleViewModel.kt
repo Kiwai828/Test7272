@@ -25,6 +25,7 @@ data class SubtitleState(
     val pricingTiers: List<PricingTier> = emptyList(),
     val videoUri: Uri? = null, val videoLocalPath: String? = null,
     val videoFilename: String? = null, val videoDuration: Int = 0,
+    val videoWidth: Int = 0, val videoHeight: Int = 0,
     val urlInput: String = "",
     val isCheckingUrl: Boolean = false,
     val videoInfo: VideoDownloader.VideoInfo? = null,
@@ -32,7 +33,8 @@ data class SubtitleState(
     val isDownloading: Boolean = false, val downloadProgress: Float = 0f,
     val fontColor: String = "#FFFFFF", val fontSize: Float = 16f,
     val boxEnabled: Boolean = true, val position: String = "bottom_center",
-    val isProcessing: Boolean = false, val error: String? = null,
+    val isProcessing: Boolean = false, val processStatus: String = "", val success: String? = null,
+    val error: String? = null,
 )
 
 @HiltViewModel
@@ -119,7 +121,7 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
             val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP)
             af.delete()
 
-            val sttResult = repo.groqStt(File(audioPath.takeIf { File(it).exists() } ?: run { val f = File(context.cacheDir, "stt_${System.currentTimeMillis()}.m4a"); f.writeBytes(android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)); f }))
+            val sttResult = repo.groqStt(File(audioPath.takeIf { File(it).exists() } ?: run { val f = File(context.cacheDir, "stt_${System.currentTimeMillis()}.m4a"); f.writeBytes(android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)); f.absolutePath }))
             val transcribedText = when (sttResult) {
                 is Result.Success -> sttResult.data.result?.text ?: ""
                 is Result.Error -> ""
