@@ -200,8 +200,10 @@ private fun PackagesDialog(packages: List<CoinPackage>, paymentMessage: String, 
                                 Surface(color = Gold.copy(0.15f), shape = RoundedCornerShape(8.dp)) {
                                     Text(pkg.displayPrice, color = Gold, fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-                                }
-                            }
+    }
+}
+}
+}
                         }
                     }
                 }
