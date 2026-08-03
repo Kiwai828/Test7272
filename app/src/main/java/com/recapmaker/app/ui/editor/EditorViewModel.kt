@@ -23,7 +23,11 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
@@ -271,23 +275,30 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
         val chunks = splitTextIntoChunks(text, 800)
         Log.d("TTS", "Text ${text.length} chars → ${chunks.size} chunks")
 
+        val results: List<Pair<Int, String?>>
+        state = state.copy(processStatus = "TTS generating...")
+        coroutineScope {
+            results = chunks.mapIndexed { idx, chunk ->
+                async(Dispatchers.IO) {
+                    val audioPath = generateSingleTtsChunk(context, chunk, voice)
+                    idx to audioPath
+                }
+            }.awaitAll()
+        }
+
         val chunkFiles = mutableListOf<String>()
-        for ((idx, chunk) in chunks.withIndex()) {
-            state = state.copy(processStatus = "AI Voice ${idx + 1}/${chunks.size}...")
-            val audioPath = generateSingleTtsChunk(context, chunk, voice)
-            if (audioPath != null) {
-                chunkFiles.add(audioPath)
+        results.forEach { (idx, path) ->
+            if (path != null) {
+                chunkFiles.add(path)
             } else {
                 Log.w("TTS", "Chunk $idx failed, skipping")
             }
         }
-
         if (chunkFiles.isEmpty()) {
             state = state.copy(processStatus = "⚠ TTS audio generate မရ")
             delay(1500); return null
         }
 
-        // Concatenate if multiple chunks
         val fullAudioPath: String
         if (chunkFiles.size == 1) {
             fullAudioPath = chunkFiles[0]
@@ -295,13 +306,11 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
             state = state.copy(processStatus = "TTS audio ပေါင်းနေသည်...")
             fullAudioPath = concatenateAudioFiles(context, chunkFiles) ?: run {
                 state = state.copy(processStatus = "⚠ Audio concat fail")
-                delay(1000); return chunkFiles[0] // fallback: use first chunk
+                delay(1000); return chunkFiles[0]
             }
-            // Cleanup chunk files
             chunkFiles.forEach { File(it).delete() }
         }
 
-        // Speed-match TTS audio to video duration
         if (videoDurSec > 0) {
             state = state.copy(processStatus = "Audio duration matching...")
             val matched = FFmpegProcessor.matchAudioToVideoDuration(fullAudioPath, videoDurSec, context)
@@ -382,11 +391,43 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     private suspend fun generateEdgeTtsAudio(context: Context, text: String, voice: String): String? {
         val cfg = repo.getEdgeTtsConfig()
         val (key, region) = when (cfg) { is Result.Success -> cfg.data; is Result.Error -> { state = state.copy(processStatus = "", error = "Edge TTS: ${cfg.message}"); return null } }
-        val r = repo.edgeTtsDirect(text, voice, key, region)
-        return when (r) {
-            is Result.Success -> r.data.absolutePath
-            is Result.Error -> { state = state.copy(processStatus = "", error = "Edge TTS: ${r.message}"); null }
+
+        val chunks = splitTextIntoChunks(text, 800)
+        Log.d("TTS", "Edge TTS: ${text.length} chars → ${chunks.size} chunks")
+
+        val results: List<Pair<Int, Result>>
+        state = state.copy(processStatus = "Edge TTS generating...")
+        coroutineScope {
+            results = chunks.mapIndexed { idx, chunk ->
+                async(Dispatchers.IO) {
+                    val r = repo.edgeTtsDirect(chunk, voice, key, region)
+                    idx to r
+                }
+            }.awaitAll()
         }
+
+        val chunkFiles = mutableListOf<String>()
+        results.forEach { (idx, r) ->
+            when (r) {
+                is Result.Success -> chunkFiles.add(r.data.absolutePath)
+                is Result.Error -> { Log.e("TTS", "Edge chunk $idx failed: ${r.message}"); }
+            }
+        }
+
+        if (chunkFiles.isEmpty()) {
+            state = state.copy(processStatus = "", error = "Edge TTS: all chunks failed")
+            return null
+        }
+
+        if (chunkFiles.size == 1) return chunkFiles[0]
+
+        state = state.copy(processStatus = "Edge TTS concatenating...")
+        val fullPath = concatenateAudioFiles(context, chunkFiles) ?: run {
+            state = state.copy(processStatus = "", error = "Edge TTS concat fail")
+            return chunkFiles[0]
+        }
+        chunkFiles.forEach { File(it).delete() }
+        return fullPath
     }
 
     private suspend fun generateSrtFromTts(context: Context, text: String, audioPath: String): String? {
