@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -327,7 +328,7 @@ fun DraggableBox(
             .background(borderColor.copy(0.15f), RoundedCornerShape(4.dp))
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
-                    change.consume()
+                    change.consumeAllChanges()
                     offsetX = (offsetX + dragAmount.x).coerceIn(0f, (containerSize.width - boxW).coerceAtLeast(0f))
                     offsetY = (offsetY + dragAmount.y).coerceIn(0f, (containerSize.height - boxH).coerceAtLeast(0f))
                     emitCoords()
@@ -356,7 +357,7 @@ fun DraggableBox(
                 .clip(CircleShape).background(Color.White).border(1.5.dp, borderColor.copy(0.5f), CircleShape)
                 .pointerInput(Unit) {
                     detectDragGestures { change, dragAmount ->
-                        change.consume()
+                        change.consumeAllChanges()
                         boxW = (boxW + dragAmount.x).coerceIn(40f, (containerSize.width - offsetX).toFloat())
                         boxH = (boxH + dragAmount.y).coerceIn(30f, (containerSize.height - offsetY).toFloat())
                         emitCoords()

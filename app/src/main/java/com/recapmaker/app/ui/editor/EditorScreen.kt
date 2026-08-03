@@ -206,14 +206,14 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         }
                     }
                     AnimatedVisibility(ae.reverb) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Amount", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
                             Slider(value = ae.reverbAmount, onValueChange = { vm.setReverbAmount(it) }, valueRange = 0.1f..0.8f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Rose, activeTrackColor = Rose))
                             Text("${"%.1f".format(ae.reverbAmount)}", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
                         }
                     }
                     AnimatedVisibility(ae.bassBoost) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Gain", color = TextDim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
                             Slider(value = ae.bassAmount, onValueChange = { vm.setBassAmount(it) }, valueRange = 1f..10f, modifier = Modifier.Companion.weight(1f), colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
                             Text("${ae.bassAmount.toInt()}dB", color = TextMid, fontSize = 11.sp, modifier = Modifier.width(30.dp))
@@ -232,7 +232,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         Spacer(Modifier.height(8.dp))
                         Text("Clips will be joined with fade transitions", color = TextDim, fontSize = 11.sp)
                         s.extraClips.forEachIndexed { i, path ->
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("Clip ${i + 1}: ${File(path).name}", color = TextMid, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 IconButton(onClick = { vm.removeExtraClip(path) }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, null, tint = ErrorRed, modifier = Modifier.size(14.dp)) }
                             }
