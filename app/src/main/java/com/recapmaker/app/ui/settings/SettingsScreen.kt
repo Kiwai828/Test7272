@@ -256,3 +256,4 @@ private fun SettingsItem(icon: ImageVector, title: String, subtitle: String, onC
         Icon(Icons.Default.ChevronRight, null, tint = TextDim)
     }
 }
+
