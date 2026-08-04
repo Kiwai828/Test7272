@@ -314,7 +314,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                             Surface(color = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder)) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(item.fileName, color = TextPrimary, fontSize = 12.sp, maxLines = 1)
+                                        Text(item.inputVideoName, color = TextPrimary, fontSize = 12.sp, maxLines = 1)
                                         val sc = if (item.status == "completed") Emerald else ErrorRed
                                         Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(sc)); Spacer(Modifier.width(6.dp)); Text(item.status, color = sc, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
                                     }

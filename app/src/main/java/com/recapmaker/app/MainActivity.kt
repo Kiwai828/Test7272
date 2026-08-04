@@ -14,6 +14,8 @@ import com.recapmaker.app.ui.common.RecapTheme
 import com.recapmaker.app.ui.dashboard.*
 import com.recapmaker.app.ui.editor.EditorScreen
 import com.recapmaker.app.ui.editor.EditorViewModel
+import com.recapmaker.app.ui.history.HistoryScreen
+import com.recapmaker.app.ui.history.HistoryViewModel
 import com.recapmaker.app.ui.settings.SettingsScreen
 import com.recapmaker.app.ui.subtitle.SubtitleScreen
 import com.recapmaker.app.ui.subtitle.SubtitleViewModel
@@ -63,12 +65,18 @@ class MainActivity : ComponentActivity() {
                         DashboardScreen(vm,
                             onEditor = { nav.navigate("editor") },
                             onSubtitle = { nav.navigate("subtitle") },
+                            onHistory = { nav.navigate("history") },
                             onSettings = { nav.navigate("settings") },
                             onLogout = {
                                 runBlocking { tokenManager.clear() }
                                 nav.navigate("login") { popUpTo(0) { inclusive = true } }
                             },
                         )
+                    }
+
+                    composable("history") {
+                        val vm: HistoryViewModel = hiltViewModel()
+                        HistoryScreen(onBack = { nav.popBackStack() }, vm = vm)
                     }
 
                     composable("editor") {
