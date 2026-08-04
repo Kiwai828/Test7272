@@ -3,6 +3,7 @@ package com.recapmaker.app.media
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.net.Uri
@@ -12,6 +13,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.PendingIntentCompat
 import kotlinx.coroutines.*
 import java.io.File
 
@@ -135,7 +137,7 @@ class VideoProcessService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
             if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                val channel = NotificationChannel(CHANNEL_ID, "Video Processing", NotificationManager.IMPORTANCE_LOW).apply {
+                val channel = NotificationChannel(CHANNEL_ID, "Video Processing", NotificationManager.IMPORTANCE_DEFAULT).apply {
                     description = "Video processing progress"
                 }
                 nm.createNotificationChannel(channel)
@@ -183,11 +185,19 @@ class VideoProcessService : Service() {
     private fun showDoneNotification(title: String, text: String, success: Boolean) {
         try {
             val nm = getSystemService(NotificationManager::class.java)
+            val pi = PendingIntentCompat.getActivity(
+                this, 0,
+                packageManager.getLaunchIntentForPackage(packageName)!!.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                },
+                PendingIntentCompat.FLAG_IMMUTABLE
+            )
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(if (success) android.R.drawable.ic_dialog_info else android.R.drawable.ic_dialog_alert)
                 .setAutoCancel(true)
+                .setContentIntent(pi)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
                 .build()
