@@ -80,7 +80,7 @@ class HistoryViewModel @Inject constructor(private val historyDao: VideoHistoryD
     }
 
     fun reprocessEntry(entry: VideoHistoryEntity) {
-        EditorViewModel.ReprocessCache.pendingId = entry.id
+        EditorViewModel.ReprocessCache.pendingEntry = entry
         hideDetail()
     }
 
