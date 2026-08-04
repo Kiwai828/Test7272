@@ -62,7 +62,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     companion object {
         object ReprocessCache {
             var pendingId: Long? = null
-            fun consume(): VideoHistoryEntity? = pendingId.also { pendingId = null }
+            fun consume(): Long? = pendingId.also { pendingId = null }
         }
     }
 
