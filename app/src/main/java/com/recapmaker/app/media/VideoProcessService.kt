@@ -20,20 +20,20 @@ class VideoProcessService : Service() {
     companion object {
         const val TAG = "VideoProcessSvc"
         const val CHANNEL_ID = "recap_process_channel"
+        const val DONE_CHANNEL_ID = "recap_done_channel"
         const val NOTIFICATION_ID = 101
         const val DONE_NOTIFICATION_ID = 102
 
         const val EXTRA_INPUT_PATH = "input_path"
         const val EXTRA_OPTIONS_JSON = "options_json"
+        const val ACTION_CANCEL = "action_cancel"
 
-        // Shared state — ViewModel polls this
         @Volatile var isRunning = false; private set
         @Volatile var currentStatus = ""; private set
         @Volatile var resultSuccess: Boolean? = null; private set
         @Volatile var resultMessage: String? = null; private set
         @Volatile var resultOutputPath: String? = null; private set
 
-        // Process params — set BEFORE starting service
         var pendingInputPath: String? = null
         var pendingOptions: FFmpegProcessor.ProcessOptions? = null
 
@@ -51,12 +51,20 @@ class VideoProcessService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        // Start foreground IMMEDIATELY in onCreate to avoid ANR on Android 12+
+        createDoneNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Preparing..."))
         Log.d(TAG, "Service created, foreground started")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CANCEL) {
+            Log.d(TAG, "Cancel requested")
+            job.cancel()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val inputPath = pendingInputPath
         val options = pendingOptions
 
@@ -70,14 +78,12 @@ class VideoProcessService : Service() {
             return START_NOT_STICKY
         }
 
-        // Mark running BEFORE launching coroutine (prevents race condition)
         isRunning = true
         resultSuccess = null
         Log.d(TAG, "Starting process: $inputPath")
 
         scope.launch {
             try {
-                // Step 1: FFmpeg process
                 currentStatus = "Video ပြုပြင်နေသည်..."
                 updateNotification(currentStatus)
                 Log.d(TAG, "FFmpeg processing...")
@@ -85,7 +91,6 @@ class VideoProcessService : Service() {
                 val result = FFmpegProcessor.process(inputPath, this@VideoProcessService, options)
 
                 if (result.success && result.outputPath != null) {
-                    // Step 2: Save to gallery
                     currentStatus = "Gallery သို့ သိမ်းနေသည်..."
                     updateNotification(currentStatus)
                     Log.d(TAG, "Saving to gallery...")
@@ -127,6 +132,7 @@ class VideoProcessService : Service() {
 
     override fun onDestroy() {
         job.cancel()
+        reset()
         super.onDestroy()
         Log.d(TAG, "Service destroyed")
     }
@@ -143,7 +149,24 @@ class VideoProcessService : Service() {
         }
     }
 
+    private fun createDoneNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            if (nm.getNotificationChannel(DONE_CHANNEL_ID) == null) {
+                val channel = NotificationChannel(DONE_CHANNEL_ID, "Video Processing Done", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "Video processing completion"
+                }
+                nm.createNotificationChannel(channel)
+            }
+        }
+    }
+
     private fun buildNotification(text: String): Notification {
+        val cancelIntent = Intent(this, VideoProcessService::class.java).apply {
+            action = ACTION_CANCEL
+        }
+        val cancelPendingIntent = PendingIntent.getService(this, 0, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Recap Maker")
             .setContentText(text)
@@ -151,6 +174,7 @@ class VideoProcessService : Service() {
             .setOngoing(true)
             .setProgress(0, 0, true)
             .setSilent(true)
+            .addAction(android.R.drawable.ic_delete, "Cancel", cancelPendingIntent)
             .build()
     }
 
@@ -183,10 +207,17 @@ class VideoProcessService : Service() {
     private fun showDoneNotification(title: String, text: String, success: Boolean) {
         try {
             val nm = getSystemService(NotificationManager::class.java)
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val contentPendingIntent = PendingIntent.getActivity(this, 0, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+            val notification = NotificationCompat.Builder(this, DONE_CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(if (success) android.R.drawable.ic_dialog_info else android.R.drawable.ic_dialog_alert)
+                .setContentIntent(contentPendingIntent)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))

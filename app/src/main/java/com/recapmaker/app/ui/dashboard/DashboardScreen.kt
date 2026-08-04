@@ -23,7 +23,7 @@ import com.recapmaker.app.data.model.CoinPackage
 import com.recapmaker.app.ui.common.*
 
 @Composable
-fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: () -> Unit, onSettings: () -> Unit, onLogout: () -> Unit) {
+fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: () -> Unit, onHistory: () -> Unit, onSettings: () -> Unit, onLogout: () -> Unit) {
     val s = vm.state
     var showPackages by remember { mutableStateOf(false) }
     var showCheckin by remember { mutableStateOf(false) }
@@ -90,6 +90,15 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
             PulseGlow(Emerald, visible = true, modifier = Modifier.Companion.weight(1f)) {
                 ActionCard("Subtitles", "Auto-generate & burn", Icons.Default.Subtitles, Emerald, Modifier.Companion.weight(1f)) { onSubtitle() }
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PulseGlow(Gold, visible = true, modifier = Modifier.Companion.weight(1f)) {
+                ActionCard("History", "Past processing jobs", Icons.Default.History, Gold, Modifier.Companion.weight(1f)) { onHistory() }
+            }
+            Spacer(Modifier.Companion.weight(1f))
         }
 
         Spacer(Modifier.height(12.dp))
