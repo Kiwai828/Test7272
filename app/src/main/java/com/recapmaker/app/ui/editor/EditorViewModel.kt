@@ -51,6 +51,7 @@ data class EditorState(
     val extraClips: List<String> = emptyList(),
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
+    val outputQuality: String = "balanced", val targetWidth: Int = 0, val targetFps: Int = 0,
 )
 
 @HiltViewModel
@@ -130,6 +131,11 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     // ═══ EDGE TTS ═══
     fun setUseEdgeTts(v: Boolean) { state = state.copy(useEdgeTts = v) }
     fun setEdgeTtsAvailable(v: Boolean) { state = state.copy(edgeTtsAvailable = v) }
+
+    // ═══ OUTPUT SETTINGS ═══
+    fun setOutputQuality(v: String) { state = state.copy(outputQuality = v) }
+    fun setTargetWidth(v: Int) { state = state.copy(targetWidth = v) }
+    fun setTargetFps(v: Int) { state = state.copy(targetFps = v) }
 
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }
@@ -212,6 +218,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                 videoEffects = state.videoEffects, bgMusicPath = bgMusicPath, bgMusicVolume = state.bgMusicVolume, autoDuck = state.autoDuck,
                 audioEffects = state.audioEffects, extraClips = state.extraClips,
                 subtitlePath = srtPath,
+                outputQuality = state.outputQuality, targetWidth = state.targetWidth, targetFps = state.targetFps,
             )
 
             VideoProcessService.reset()

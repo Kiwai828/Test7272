@@ -111,4 +111,9 @@ dependencies {
     implementation("io.github.junkfood02.youtubedl-android:library:$ytdlAndroid")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$ytdlAndroid")
     implementation("io.github.junkfood02.youtubedl-android:aria2c:$ytdlAndroid")
+
+    // Test
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }

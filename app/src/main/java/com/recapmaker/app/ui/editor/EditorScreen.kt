@@ -248,6 +248,84 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     }
                 }
 
+                // ═══ OUTPUT SETTINGS ═══
+                val qualityOptions = listOf("fast" to "Fast", "balanced" to "Balanced", "quality" to "Quality", "max" to "Max")
+                val resolutionOptions = listOf("Original" to 0, "480p" to 480, "720p" to 720, "1080p" to 1080)
+                val fpsOptions = listOf("Original" to 0, "24 fps" to 24, "30 fps" to 30, "60 fps" to 60)
+                var showResDropdown by remember { mutableStateOf(false) }
+                var showFpsDropdown by remember { mutableStateOf(false) }
+                val qualityKbps = when (s.outputQuality) { "fast" -> 3000; "quality" -> 8000; "max" -> 15000; else -> 5000 }
+                val baseSizeMb = if (s.videoDuration > 0 && qualityKbps > 0) (qualityKbps.toLong() * 1000L * s.videoDuration / 8 / 1024 / 1024).toInt() else 0
+                val resScale = if (s.targetWidth > 0 && s.videoWidth > 0) s.targetWidth.toFloat() / s.videoWidth.toFloat() else 1f
+                val estimatedSizeMb = (baseSizeMb * resScale).toInt()
+                SectionCard("Output Settings", Icons.Default.Settings, Gold) {
+                    Text("Quality", color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        qualityOptions.forEach { (v, l) ->
+                            FilterChip(
+                                selected = s.outputQuality == v,
+                                onClick = { vm.setOutputQuality(v) },
+                                label = { Text(l, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Gold, selectedLabelColor = DarkBg,
+                                    containerColor = SurfaceDark, labelColor = TextMid
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    borderColor = CardBorder, selectedBorderColor = Gold, borderWidth = 1.dp
+                                ),
+                                modifier = Modifier.height(32.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            OutlinedButton(
+                                onClick = { showResDropdown = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, CardBorder),
+                                colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark)
+                            ) {
+                                Text(resolutionOptions.find { it.second == s.targetWidth }?.first ?: "Original", fontSize = 12.sp, color = TextPrimary, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                                Icon(Icons.Default.ArrowDropDown, null, tint = TextDim, modifier = Modifier.size(16.dp))
+                            }
+                            DropdownMenu(expanded = showResDropdown, onDismissRequest = { showResDropdown = false }, modifier = Modifier.fillMaxWidth()) {
+                                resolutionOptions.forEach { (l, v) ->
+                                    DropdownMenuItem(
+                                        text = { Text(l, fontSize = 13.sp, color = TextPrimary) },
+                                        onClick = { vm.setTargetWidth(v); showResDropdown = false },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            OutlinedButton(
+                                onClick = { showFpsDropdown = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, CardBorder),
+                                colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark)
+                            ) {
+                                Text(fpsOptions.find { it.second == s.targetFps }?.first ?: "Original", fontSize = 12.sp, color = TextPrimary, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                                Icon(Icons.Default.ArrowDropDown, null, tint = TextDim, modifier = Modifier.size(16.dp))
+                            }
+                            DropdownMenu(expanded = showFpsDropdown, onDismissRequest = { showFpsDropdown = false }, modifier = Modifier.fillMaxWidth()) {
+                                fpsOptions.forEach { (l, v) ->
+                                    DropdownMenuItem(
+                                        text = { Text(l, fontSize = 13.sp, color = TextPrimary) },
+                                        onClick = { vm.setTargetFps(v); showFpsDropdown = false },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("Est. size: ${estimatedSizeMb}MB", color = TextDim, fontSize = 11.sp)
+                }
+
                 // ═══ 6. PROCESS ═══
                 if (s.isProcessing) { Surface(color = Purple.copy(.08f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Purple.copy(.2f))) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Purple, strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(s.processStatus.ifBlank { "Processing..." }, color = TextPrimary, fontSize = 13.sp) } } }
                 PrimaryButton(text = if (s.isProcessing) "Processing..." else "စတင်ပြုပြင်မည် ${vm.costText}", onClick = { vm.startProcessing(ctx) }, loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null)
