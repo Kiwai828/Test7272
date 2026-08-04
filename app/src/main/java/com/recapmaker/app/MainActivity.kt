@@ -17,6 +17,8 @@ import com.recapmaker.app.ui.editor.EditorViewModel
 import com.recapmaker.app.ui.settings.SettingsScreen
 import com.recapmaker.app.ui.subtitle.SubtitleScreen
 import com.recapmaker.app.ui.subtitle.SubtitleViewModel
+import com.recapmaker.app.ui.subtitle.SubtitleEditorScreen
+import com.recapmaker.app.ui.subtitle.SubtitleEditorViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -73,12 +75,17 @@ class MainActivity : ComponentActivity() {
 
                     composable("editor") {
                         val vm: EditorViewModel = hiltViewModel()
-                        EditorScreen(onBack = { nav.popBackStack() }, vm = vm)
+                        EditorScreen(onBack = { nav.popBackStack() }, onEditSubtitles = { nav.navigate("subtitle-editor") }, vm = vm)
                     }
 
                     composable("subtitle") {
                         val vm: SubtitleViewModel = hiltViewModel()
-                        SubtitleScreen(onBack = { nav.popBackStack() }, vm = vm)
+                        SubtitleScreen(onBack = { nav.popBackStack() }, onEditSubtitles = { nav.navigate("subtitle-editor") }, vm = vm)
+                    }
+
+                    composable("subtitle-editor") {
+                        val vm: SubtitleEditorViewModel = hiltViewModel()
+                        SubtitleEditorScreen(onBack = { nav.popBackStack() }, vm = vm)
                     }
 
                     composable("settings") {
