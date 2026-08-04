@@ -13,6 +13,7 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.data.model.BlurArea
+import com.recapmaker.app.data.model.SubtitleEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -461,6 +462,91 @@ object FFmpegProcessor {
         } catch (e: Exception) {
             Log.e(TAG, "Gallery save error: ${e.message}")
             null
+        }
+    }
+
+    // ─────────────────────────────────────────
+    // SRT parsing, writing, and burn-in
+    // ─────────────────────────────────────────
+    suspend fun parseSrt(filePath: String): List<SubtitleEntry> = withContext(Dispatchers.IO) {
+        val entries = mutableListOf<SubtitleEntry>()
+        try {
+            val text = File(filePath).readText()
+            val blocks = text.split(Regex("\\n\\s*\\n"))
+            for (block in blocks) {
+                val lines = block.trim().lines()
+                if (lines.size < 3) continue
+                val index = lines[0].trim().toIntOrNull() ?: continue
+                val timeLine = lines[1].trim()
+                val timeMatch = Regex("(\\d{2}:\\d{2}:\\d{2},\\d{3})\\s*-->\\s*(\\d{2}:\\d{2}:\\d{2},\\d{3})").find(timeLine) ?: continue
+                val startMs = parseSrtTime(timeMatch.groupValues[1])
+                val endMs = parseSrtTime(timeMatch.groupValues[2])
+                val subText = lines.drop(2).joinToString("\n").trim()
+                if (subText.isNotBlank()) {
+                    entries.add(SubtitleEntry(index, startMs, endMs, subText))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "SRT parse error: ${e.message}")
+        }
+        entries
+    }
+
+    private fun parseSrtTime(timeStr: String): Long {
+        val parts = timeStr.split(":")
+        val h = parts[0].toInt()
+        val m = parts[1].toInt()
+        val sAndMs = parts[2].split(",")
+        val s = sAndMs[0].toInt()
+        val ms = sAndMs[1].toInt()
+        return (h * 3600L + m * 60L + s) * 1000L + ms
+    }
+
+    fun formatSrtTime(totalMs: Long): String {
+        val h = (totalMs / 3600000).toInt()
+        val m = ((totalMs % 3600000) / 60000).toInt()
+        val s = ((totalMs % 60000) / 1000).toInt()
+        val ms = (totalMs % 1000).toInt()
+        return "%02d:%02d:%02d,%03d".format(h, m, s, ms)
+    }
+
+    suspend fun writeSrt(entries: List<SubtitleEntry>, outputPath: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            File(outputPath).printWriter().use { pw ->
+                entries.forEach { entry ->
+                    pw.println(entry.index)
+                    pw.println("${formatSrtTime(entry.startMs)} --> ${formatSrtTime(entry.endMs)}")
+                    pw.println(entry.text)
+                    pw.println()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "SRT write error: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun burnSubtitles(inputPath: String, srtPath: String, outputPath: String): ProcessResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        if (!File(inputPath).exists() || !File(srtPath).exists()) {
+            return@withContext ProcessResult(false, error = "Input or SRT file not found")
+        }
+        try {
+            val escapedSrtPath = srtPath.replace("\\", "/").replace(":", "\\:")
+            val cmd = "-i $inputPath -vf \"subtitles='$escapedSrtPath':force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=1,Shadow=0,Alignment=2'\" -c:v mpeg4 -q:v 1 -b:v 4000k -c:a aac -b:a 192k -movflags +faststart -y $outputPath"
+            Log.d(TAG, "Burn subtitles CMD: $cmd")
+            val session = FFmpegKit.execute(cmd)
+            if (ReturnCode.isSuccess(session.returnCode) && File(outputPath).exists() && File(outputPath).length() > 0) {
+                ProcessResult(true, outputPath, durationMs = System.currentTimeMillis() - t0)
+            } else {
+                val logs = session.allLogsAsString ?: "Unknown error"
+                Log.e(TAG, "Burn subtitles FAIL: ${logs.takeLast(500)}")
+                ProcessResult(false, error = "Subtitle burn failed")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Burn subtitles exception: ${e.message}")
+            ProcessResult(false, error = e.message ?: "Exception")
         }
     }
 }

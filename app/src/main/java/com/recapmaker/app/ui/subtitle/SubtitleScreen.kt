@@ -28,7 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.recapmaker.app.ui.common.*
 
 @Composable
-fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) {
+fun SubtitleScreen(onBack: () -> Unit, onEditSubtitles: () -> Unit = {}, vm: SubtitleViewModel = hiltViewModel()) {
     val s = vm.state; val ctx = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
 
@@ -92,6 +92,12 @@ fun SubtitleScreen(onBack: () -> Unit, vm: SubtitleViewModel = hiltViewModel()) 
 
                 PrimaryButton(text = if (s.isProcessing) "Generating..." else "Generate Subtitles", onClick = { vm.startProcessing(ctx) },
                     loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onEditSubtitles, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Cyan.copy(0.3f)), enabled = !s.isProcessing) {
+                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp), tint = Cyan)
+                    Spacer(Modifier.width(8.dp)); Text("Edit Subtitles", color = Cyan, fontSize = 13.sp)
+                }
                 Spacer(Modifier.height(24.dp))
             }
         }
