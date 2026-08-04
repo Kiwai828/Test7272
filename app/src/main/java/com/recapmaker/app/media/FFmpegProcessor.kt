@@ -172,8 +172,9 @@ object FFmpegProcessor {
 
             val outFile = File(context.cacheDir, "processed_${System.currentTimeMillis()}.mp4")
             try {
-                val cmd = if (options.extraClips.isNotEmpty()) buildMultiClipCommand(inputPath, outFile.absolutePath, options, context)
-                else buildCommand(inputPath, outFile.absolutePath, options, context, inputPath)
+                val vfParts = buildVideoFilterParts(options, context)
+                val cmd = if (options.extraClips.isNotEmpty()) buildMultiClipCommand(inputPath, outFile.absolutePath, options, context, inputPath, vfParts)
+                    else buildCommand(inputPath, outFile.absolutePath, options, context, inputPath)
                 Log.d(TAG, "CMD: $cmd")
                 val session = FFmpegKit.execute(cmd)
 
@@ -198,9 +199,9 @@ object FFmpegProcessor {
     // ─────────────────────────────────────────
     // Multi-clip joiner with fade transitions
     // ─────────────────────────────────────────
-    private fun buildMultiClipCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input): String {
+    private fun buildMultiClipCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input, vfParts: List<String> = emptyList()): String {
         val allClips = listOf(input) + opts.extraClips.filter { File(it).exists() }
-        if (allClips.size < 2) return buildCommand(input, output, opts, context, originalPath)
+        val hasVfParts = vfParts.isNotEmpty()
 
         val fadeDur = 0.5
         val sb = StringBuilder()
@@ -215,15 +216,16 @@ object FFmpegProcessor {
         }
 
         if (allClips.size == 2) {
-            filterParts.add("${labelMap[0]}xfade=transition=fade:duration=$fadeDur:offset=3[vout]")
+            val finalLabel = if (hasVfParts) "[vpre]" else "[vout]"
+            filterParts.add("${labelMap[0]}xfade=transition=fade:duration=$fadeDur:offset=3$finalLabel")
         } else {
             var prev = "[0:v]"
             for (i in 1 until allClips.size) {
                 val offset = (i * 3.0)
-                filterParts.add("${prev}[${labelMap[i]!!.substringAfter('[').substringBefore(']')}:v]xfade=transition=fade:duration=$fadeDur:offset=$offset[xf$i]")
-                prev = "[xf$i]"
+                val curLabel = if (i == allClips.size - 1 && hasVfParts) "[vpre]" else if (i == allClips.size - 1) "[vout]" else "[xf$i]"
+                filterParts.add("${prev}[${labelMap[i]!!.substringAfter('[').substringBefore(']')}:v]xfade=transition=fade:duration=$fadeDur:offset=$offset$curLabel")
+                prev = curLabel
             }
-            filterParts.add("$prev[vout]")
         }
 
         val audioChain = StringBuilder()
@@ -239,50 +241,46 @@ object FFmpegProcessor {
             filterParts.add(audioChain.toString())
         }
 
+        if (hasVfParts) {
+            filterParts.add("[vpre]${vfParts.joinToString(",")}[vout]")
+        }
+
         val origKbps = getVideoBitrateKbps(originalPath)
         val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
         val filterStr = filterParts.joinToString(";")
-        return "${sb}-filter_complex $filterStr -map [vout] -map [aout] -c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart -y $output"
+        val videoMap = if (hasVfParts) "[vout]" else "[vout]"
+        val audioMap = if (audioParts.isNotEmpty()) "[aout]" else if (allClips.size > 1) "0:a?" else "0:a?"
+        return "${sb}-filter_complex $filterStr -map $videoMap -map $audioMap -c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart -y $output"
     }
 
     // ─────────────────────────────────────────
-    // Command builder
-    // Rules:
-    //  • mpeg4 only — h264_mediacodec incompatible with filter_complex
-    //  • drawtext needs fontfile= pointing to a real .ttf on the device
-    //  • filter_complex used when: logo OR (vfParts > 1 or mixed with audio filter)
-    //  • Simple -vf used when: only vfParts, no logo, no hasTts
-    //  • -map 0:a? always optional so audio-less videos don't crash
+    // Video filter parts builder — shared between
+    // single-clip and multi-clip paths so filters
+    // are only constructed once.
     // ─────────────────────────────────────────
-    private fun buildCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input): String {
-        val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
-        val hasTts  = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
-        val hasBgMusic = opts.bgMusicPath != null && File(opts.bgMusicPath).exists()
-        val hasSubtitle = opts.subtitlePath != null && File(opts.subtitlePath).exists()
-
-        val scX = if (opts.previewWidth  > 0 && opts.videoWidth  > 0) opts.videoWidth.toFloat()  / opts.previewWidth  else 1f
+    private fun buildVideoFilterParts(opts: ProcessOptions, context: Context): List<String> {
+        val scX = if (opts.previewWidth > 0 && opts.videoWidth > 0) opts.videoWidth.toFloat() / opts.previewWidth else 1f
         val scY = if (opts.previewHeight > 0 && opts.videoHeight > 0) opts.videoHeight.toFloat() / opts.previewHeight else 1f
         fun scaleX(v: Int) = (v * scX).toInt()
         fun scaleY(v: Int) = (v * scY).toInt()
 
-        // ── Video filter parts ──
-        val vfParts = mutableListOf<String>()
-        if (opts.flip)  vfParts.add("hflip")
+        val parts = mutableListOf<String>()
+        if (opts.flip) parts.add("hflip")
 
         val ve = opts.videoEffects
-        if (ve.grayscale) vfParts.add("colorchannelmixer=aa=0:aa=0:aa=0")
-        if (ve.sepia) vfParts.add("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
-        if (ve.vignette) vfParts.add("vignette=PI/4")
-        if (ve.brightness != 1.0f) vfParts.add("eq=brightness=${"%.2f".format((ve.brightness - 1).coerceIn(-0.5f, 0.5f))}")
-        if (ve.contrast != 1.0f) vfParts.add("eq=contrast=${"%.2f".format(ve.contrast.coerceIn(0.5f, 2.0f))}")
-        if (opts.speed) vfParts.add("setpts=PTS/1.05")
+        if (ve.grayscale) parts.add("colorchannelmixer=aa=0:aa=0:aa=0")
+        if (ve.sepia) parts.add("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
+        if (ve.vignette) parts.add("vignette=PI/4")
+        if (ve.brightness != 1.0f) parts.add("eq=brightness=${"%.2f".format((ve.brightness - 1).coerceIn(-0.5f, 0.5f))}")
+        if (ve.contrast != 1.0f) parts.add("eq=contrast=${"%.2f".format(ve.contrast.coerceIn(0.5f, 2.0f))}")
+        if (opts.speed) parts.add("setpts=PTS/1.05")
 
         for (a in opts.blurAreas) {
             val bx = scaleX(a.x).coerceAtLeast(0)
             val by = scaleY(a.y).coerceAtLeast(0)
             val bw = scaleX(a.w).coerceIn(4, 3840)
             val bh = scaleY(a.h).coerceIn(4, 2160)
-            vfParts.add("delogo=x=$bx:y=$by:w=$bw:h=$bh")
+            parts.add("delogo=x=$bx:y=$by:w=$bw:h=$bh")
         }
 
         if (opts.watermarkText.isNotBlank()) {
@@ -301,14 +299,39 @@ object FFmpegProcessor {
                 val wmX = if (opts.watermarkScroll) "mod(t*60\\,w+text_w)-text_w" else px
                 val wmBoxStr = if (opts.watermarkBox)
                     ":box=1:boxcolor=black@${opts.watermarkBoxOpacity}:boxborderw=5" else ""
-                vfParts.add("drawtext=${fontParam}text=$safe:fontsize=${opts.watermarkSize}:fontcolor=$wmColor:x=$wmX:y=$py$wmBoxStr")
+                parts.add("drawtext=${fontParam}text=$safe:fontsize=${opts.watermarkSize}:fontcolor=$wmColor:x=$wmX:y=$py$wmBoxStr")
             }
         }
 
-        if (hasSubtitle) {
+        if (opts.subtitlePath != null && opts.subtitlePath!!.isNotBlank()) {
             val escapedSubPath = opts.subtitlePath!!.replace("\\", "/").replace(":", "\\:")
-            vfParts.add("subtitles='$escapedSubPath':force_style='FontSize=${opts.watermarkSize.coerceIn(10, 32)},PrimaryColour=&H${opts.watermarkColor.removePrefix("#")},Alignment=2'")
+            parts.add("subtitles='$escapedSubPath':force_style='FontSize=${opts.watermarkSize.coerceIn(10, 32)},PrimaryColour=&H${opts.watermarkColor.removePrefix("#")},Alignment=2'")
         }
+
+        return parts
+    }
+
+    // ─────────────────────────────────────────
+    // Command builder
+    // Rules:
+    //  • mpeg4 only — h264_mediacodec incompatible with filter_complex
+    //  • drawtext needs fontfile= pointing to a real .ttf on the device
+    //  • filter_complex used when: logo OR (vfParts > 1 or mixed with audio filter)
+    //  • Simple -vf used when: only vfParts, no logo, no hasTts
+    //  • -map 0:a? always optional so audio-less videos don't crash
+    // ─────────────────────────────────────────
+    private fun buildCommand(input: String, output: String, opts: ProcessOptions, context: Context, originalPath: String = input): String {
+        val hasLogo = opts.logoPath != null && File(opts.logoPath).exists()
+        val hasTts  = opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()
+        val hasBgMusic = opts.bgMusicPath != null && File(opts.bgMusicPath).exists()
+        val hasSubtitle = opts.subtitlePath != null && File(opts.subtitlePath).exists()
+
+        val vfParts = buildVideoFilterParts(opts, context)
+
+        val scX = if (opts.previewWidth  > 0 && opts.videoWidth  > 0) opts.videoWidth.toFloat()  / opts.previewWidth  else 1f
+        val scY = if (opts.previewHeight > 0 && opts.videoHeight > 0) opts.videoHeight.toFloat() / opts.previewHeight else 1f
+        fun scaleX(v: Int) = (v * scX).toInt()
+        fun scaleY(v: Int) = (v * scY).toInt()
 
         // ── Audio filter parts ──
         val afParts = mutableListOf<String>()
