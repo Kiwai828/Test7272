@@ -23,6 +23,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -57,6 +58,7 @@ data class EditorState(
 @HiltViewModel
 class EditorViewModel @Inject constructor(private val repo: MainRepository, private val historyDao: VideoHistoryDao) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
+    private var historyJob: Job? = null
     init { loadCoins(); loadHistory(); checkEdgeTts(); ReprocessCache.consume()?.let { applyHistoryEntry(it) } }
 
     companion object {
@@ -509,9 +511,19 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     }
 
     // ═══ HISTORY ═══
-    fun loadHistory() { viewModelScope.launch { historyDao.getAll().collect { state = state.copy(history = it) } } }
+    fun loadHistory() {
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
+            historyDao.getAll().collect { state = state.copy(history = it) }
+        }
+    }
     fun toggleHistory() { state = state.copy(showHistory = !state.showHistory) }
     fun deleteHistoryItem(item: VideoHistoryEntity) { viewModelScope.launch { historyDao.delete(item) } }
     fun clearError() { state = state.copy(error = null) }
     fun clearSuccess() { state = state.copy(success = null) }
+
+    override fun onCleared() {
+        super.onCleared()
+        historyJob?.cancel()
+    }
 }

@@ -9,6 +9,7 @@ import com.recapmaker.app.data.local.VideoHistoryDao
 import com.recapmaker.app.data.local.VideoHistoryEntity
 import com.recapmaker.app.ui.editor.EditorViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,10 +37,13 @@ class HistoryViewModel @Inject constructor(private val historyDao: VideoHistoryD
 
     private var allEntries: List<VideoHistoryEntity> = emptyList()
 
+    private var observeJob: Job? = null
+
     init { observeAll() }
 
     private fun observeAll() {
-        viewModelScope.launch {
+        observeJob?.cancel()
+        observeJob = viewModelScope.launch {
             historyDao.getAll().collect { list ->
                 allEntries = list
                 val effects = list.flatMap { parseEffects(it.effectsApplied) }.distinct().sorted()
@@ -85,6 +89,11 @@ class HistoryViewModel @Inject constructor(private val historyDao: VideoHistoryD
     }
 
     fun clearError() { state = state.copy(error = null) }
+
+    override fun onCleared() {
+        super.onCleared()
+        observeJob?.cancel()
+    }
 
     private fun applyFilters(list: List<VideoHistoryEntity>): List<VideoHistoryEntity> {
         var result = list

@@ -1,6 +1,7 @@
 package com.recapmaker.app.data.local
 
 import androidx.room.*
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "video_history")
@@ -50,7 +51,30 @@ interface VideoHistoryDao {
     suspend fun count(): Int
 }
 
-@Database(entities = [VideoHistoryEntity::class], version = 1, exportSchema = false)
+val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("DROP TABLE IF EXISTS video_history")
+        database.execSQL(
+            "CREATE TABLE video_history (" +
+                "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
+                "inputVideoName TEXT NOT NULL, " +
+                "outputVideoName TEXT NOT NULL, " +
+                "status TEXT NOT NULL, " +
+                "createdAt INTEGER NOT NULL, " +
+                "duration INTEGER NOT NULL, " +
+                "fileSize INTEGER NOT NULL, " +
+                "effectsApplied TEXT NOT NULL, " +
+                "ttsUsed INTEGER NOT NULL, " +
+                "subtitleGenerated INTEGER NOT NULL, " +
+                "processingTimeMs INTEGER NOT NULL, " +
+                "coinsSpent INTEGER NOT NULL, " +
+                "errorMessage TEXT NOT NULL" +
+            ")"
+        )
+    }
+}
+
+@Database(entities = [VideoHistoryEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun videoHistoryDao(): VideoHistoryDao
 }
