@@ -23,6 +23,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -44,6 +45,7 @@ data class EditorState(
     val aiText: String = "", val selectedVoice: String = "Puck", val voiceTab: String = "google", val voiceSearch: String = "",
     val isAnalyzing: Boolean = false, val isProcessing: Boolean = false, val processStatus: String = "",
     val error: String? = null, val success: String? = null,
+    val processStartTime: Long? = null,
     val history: List<VideoHistoryEntity> = emptyList(), val showHistory: Boolean = false,
     val videoEffects: FFmpegProcessor.VideoEffectsState = FFmpegProcessor.VideoEffectsState(),
     val bgMusicUri: Uri? = null, val bgMusicVolume: Float = 0.3f, val autoDuck: Boolean = true,
@@ -56,7 +58,15 @@ data class EditorState(
 @HiltViewModel
 class EditorViewModel @Inject constructor(private val repo: MainRepository, private val historyDao: VideoHistoryDao) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
-    init { loadCoins(); loadHistory(); checkEdgeTts() }
+    private var historyJob: Job? = null
+    init { loadCoins(); loadHistory(); checkEdgeTts(); ReprocessCache.consume()?.let { applyHistoryEntry(it) } }
+
+    companion object {
+        object ReprocessCache {
+            var pendingId: Long? = null
+            fun consume(): Long? = pendingId.also { pendingId = null }
+        }
+    }
 
     private fun checkEdgeTts() { viewModelScope.launch { when (val r = repo.getEdgeTtsConfig()) { is Result.Success -> state = state.copy(edgeTtsAvailable = true); is Result.Error -> state = state.copy(edgeTtsAvailable = false) } } }
 
@@ -149,7 +159,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun startProcessing(context: Context) {
         val inputPath = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }
         viewModelScope.launch {
-            state = state.copy(isProcessing = true, error = null, success = null)
+            state = state.copy(isProcessing = true, error = null, success = null, processStartTime = System.currentTimeMillis())
 
             // ── 1. Coins ──
             state = state.copy(processStatus = "Coins စစ်ဆေးနေသည်...")
@@ -237,12 +247,36 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
             }
 
             val success = VideoProcessService.resultSuccess
+            val processingTime = System.currentTimeMillis() - (state.processStartTime ?: System.currentTimeMillis())
             if (success == true) {
-                historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = VideoProcessService.resultOutputPath ?: "", status = "completed", duration = state.videoDuration))
+                historyDao.insert(VideoHistoryEntity(
+                    inputVideoName = state.videoFilename ?: "video.mp4",
+                    outputVideoName = VideoProcessService.resultOutputPath?.let { File(it).name } ?: "",
+                    status = "completed",
+                    duration = state.videoDuration,
+                    fileSize = VideoProcessService.resultOutputPath?.let { File(it).length() } ?: 0L,
+                    effectsApplied = buildEffectsJson(state),
+                    ttsUsed = state.aiText.isNotBlank(),
+                    subtitleGenerated = state.subtitleEnabled,
+                    processingTimeMs = processingTime,
+                    coinsSpent = if (cost > 0) cost else 0,
+                ))
                 state = state.copy(isProcessing = false, processStatus = "", success = VideoProcessService.resultMessage); loadCoins()
             } else {
                 if (cost > 0) { repo.refundCoins(cost, "Failed", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
-                historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
+                historyDao.insert(VideoHistoryEntity(
+                    inputVideoName = state.videoFilename ?: "video.mp4",
+                    outputVideoName = "",
+                    status = "failed",
+                    duration = state.videoDuration,
+                    fileSize = 0L,
+                    effectsApplied = buildEffectsJson(state),
+                    ttsUsed = state.aiText.isNotBlank(),
+                    subtitleGenerated = state.subtitleEnabled,
+                    processingTimeMs = processingTime,
+                    coinsSpent = if (cost > 0) cost else 0,
+                    errorMessage = VideoProcessService.resultMessage ?: "Failed",
+                ))
                 state = state.copy(isProcessing = false, processStatus = "", error = VideoProcessService.resultMessage ?: "Failed")
             }
             loadHistory(); cleanup(ttsAudioPath, logoPath, bgMusicPath, srtPath); VideoProcessService.reset()
@@ -356,14 +390,89 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     }
 
     private suspend fun finishProcess(result: FFmpegProcessor.ProcessResult, cost: Int, coinType: String) {
+        val processingTime = System.currentTimeMillis() - (state.processStartTime ?: System.currentTimeMillis())
         if (result.success && result.outputPath != null) {
-            historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = result.outputPath, status = "completed", duration = state.videoDuration))
+            historyDao.insert(VideoHistoryEntity(
+                inputVideoName = state.videoFilename ?: "video.mp4",
+                outputVideoName = result.outputPath.let { File(it).name },
+                status = "completed",
+                duration = state.videoDuration,
+                fileSize = File(result.outputPath).length(),
+                effectsApplied = buildEffectsJson(state),
+                ttsUsed = state.aiText.isNotBlank(),
+                subtitleGenerated = state.subtitleEnabled,
+                processingTimeMs = processingTime,
+                coinsSpent = if (cost > 0) cost else 0,
+            ))
             state = state.copy(isProcessing = false, processStatus = "", success = "✅ ပြီးပါပြီ! (${result.durationMs / 1000}s)"); loadCoins()
         } else {
             if (cost > 0) { repo.refundCoins(cost, "Failed", if (coinType == "gold") "gold" else "silver"); loadCoins() }
-            historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
+            historyDao.insert(VideoHistoryEntity(
+                inputVideoName = state.videoFilename ?: "video.mp4",
+                outputVideoName = "",
+                status = "failed",
+                duration = state.videoDuration,
+                fileSize = 0L,
+                effectsApplied = buildEffectsJson(state),
+                ttsUsed = state.aiText.isNotBlank(),
+                subtitleGenerated = state.subtitleEnabled,
+                processingTimeMs = processingTime,
+                coinsSpent = if (cost > 0) cost else 0,
+                errorMessage = result.error ?: "Failed",
+            ))
             state = state.copy(isProcessing = false, processStatus = "", error = result.error ?: "Failed")
         }; loadHistory()
+    }
+
+    private fun applyHistoryEntry(entry: VideoHistoryEntity) {
+        val effects = parseEffects(entry.effectsApplied)
+        state = state.copy(
+            flipEnabled = "flip" in effects,
+            speedEnabled = "speed" in effects,
+            pitchEnabled = "pitch" in effects,
+            noiseEnabled = "noise" in effects,
+            blurEnabled = "blur" in effects,
+            subtitleEnabled = entry.subtitleGenerated,
+            videoEffects = state.videoEffects.copy(
+                grayscale = "grayscale" in effects,
+                sepia = "sepia" in effects,
+                vignette = "vignette" in effects,
+            ),
+        )
+    }
+
+    private fun parseEffects(json: String): List<String> {
+        if (json.isBlank() || json == "[]") return emptyList()
+        return json.removeSurrounding("[", "]")
+            .split("\",\"").map { it.trim().removeSurrounding("\"") }
+            .filter { it.isNotBlank() }
+    }
+
+    private fun buildEffectsJson(state: EditorState): String {
+        val effects = mutableListOf<String>()
+        if (state.flipEnabled) effects.add("flip")
+        if (state.speedEnabled) effects.add("speed")
+        if (state.pitchEnabled) effects.add("pitch")
+        if (state.noiseEnabled) effects.add("noise")
+        if (state.blurEnabled) effects.add("blur")
+        if (state.logoUri != null) effects.add("logo")
+        if (state.wmText.isNotBlank()) effects.add("watermark")
+        state.videoEffects.let { v ->
+            if (v.grayscale) effects.add("grayscale")
+            if (v.sepia) effects.add("sepia")
+            if (v.vignette) effects.add("vignette")
+            if (v.brightness != 1.0f) effects.add("brightness")
+            if (v.contrast != 1.0f) effects.add("contrast")
+        }
+        if (state.bgMusicUri != null) effects.add("bg_music")
+        state.audioEffects.let { a ->
+            if (a.echo) effects.add("echo")
+            if (a.reverb) effects.add("reverb")
+            if (a.bassBoost) effects.add("bass_boost")
+        }
+        if (state.extraClips.isNotEmpty()) effects.add("multi_clip")
+        if (state.subtitleEnabled) effects.add("subtitles")
+        return effects.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
     }
 
     private fun cleanup(vararg paths: String?) { paths.filterNotNull().forEach { try { File(it).delete() } catch (_: Exception) {} } }
@@ -402,9 +511,19 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     }
 
     // ═══ HISTORY ═══
-    fun loadHistory() { viewModelScope.launch { historyDao.getAll().collect { state = state.copy(history = it) } } }
+    fun loadHistory() {
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
+            historyDao.getAll().collect { state = state.copy(history = it) }
+        }
+    }
     fun toggleHistory() { state = state.copy(showHistory = !state.showHistory) }
     fun deleteHistoryItem(item: VideoHistoryEntity) { viewModelScope.launch { historyDao.delete(item) } }
     fun clearError() { state = state.copy(error = null) }
     fun clearSuccess() { state = state.copy(success = null) }
+
+    override fun onCleared() {
+        super.onCleared()
+        historyJob?.cancel()
+    }
 }

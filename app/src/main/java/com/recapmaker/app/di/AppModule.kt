@@ -7,6 +7,7 @@ import com.recapmaker.app.BuildConfig
 import com.recapmaker.app.data.api.AuthInterceptor
 import com.recapmaker.app.data.api.RecapApi
 import com.recapmaker.app.data.local.AppDatabase
+import com.recapmaker.app.data.local.MIGRATION_1_2
 import com.recapmaker.app.data.local.TokenManager
 import com.recapmaker.app.data.local.VideoHistoryDao
 import dagger.Module
@@ -61,7 +62,10 @@ object AppModule {
 
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
-        Room.databaseBuilder(ctx, AppDatabase::class.java, "recap_db").fallbackToDestructiveMigration().build()
+        Room.databaseBuilder(ctx, AppDatabase::class.java, "recap_db")
+            .addMigrations(MIGRATION_1_2)
+            .fallbackToDestructiveMigration()
+            .build()
 
     @Provides @Singleton
     fun provideHistoryDao(db: AppDatabase): VideoHistoryDao = db.videoHistoryDao()

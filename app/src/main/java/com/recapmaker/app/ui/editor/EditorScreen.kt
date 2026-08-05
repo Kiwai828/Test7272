@@ -34,7 +34,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.recapmaker.app.ui.common.*
 
 @Composable
-fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
+fun EditorScreen(onBack: () -> Unit, onEditSubtitles: () -> Unit = {}, vm: EditorViewModel = hiltViewModel()) {
     val s = vm.state; val ctx = LocalContext.current
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onLogoSelected(it) } }
@@ -250,6 +250,12 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
 
                 // ═══ 6. PROCESS ═══
                 if (s.isProcessing) { Surface(color = Purple.copy(.08f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Purple.copy(.2f))) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Purple, strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(s.processStatus.ifBlank { "Processing..." }, color = TextPrimary, fontSize = 13.sp) } } }
+                OutlinedButton(onClick = onEditSubtitles, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Cyan.copy(0.3f)), enabled = !s.isProcessing) {
+                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp), tint = Cyan)
+                    Spacer(Modifier.width(8.dp)); Text("Edit Subtitles", color = Cyan, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(8.dp))
                 PrimaryButton(text = if (s.isProcessing) "Processing..." else "စတင်ပြုပြင်မည် ${vm.costText}", onClick = { vm.startProcessing(ctx) }, loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null)
                 Spacer(Modifier.height(24.dp))
             }
@@ -314,7 +320,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                             Surface(color = SurfaceDark, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder)) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(item.fileName, color = TextPrimary, fontSize = 12.sp, maxLines = 1)
+                                        Text(item.inputVideoName, color = TextPrimary, fontSize = 12.sp, maxLines = 1)
                                         val sc = if (item.status == "completed") Emerald else ErrorRed
                                         Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(sc)); Spacer(Modifier.width(6.dp)); Text(item.status, color = sc, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
                                     }

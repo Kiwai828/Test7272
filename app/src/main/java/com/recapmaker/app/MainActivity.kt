@@ -14,9 +14,13 @@ import com.recapmaker.app.ui.common.RecapTheme
 import com.recapmaker.app.ui.dashboard.*
 import com.recapmaker.app.ui.editor.EditorScreen
 import com.recapmaker.app.ui.editor.EditorViewModel
+import com.recapmaker.app.ui.history.HistoryScreen
+import com.recapmaker.app.ui.history.HistoryViewModel
 import com.recapmaker.app.ui.settings.SettingsScreen
 import com.recapmaker.app.ui.subtitle.SubtitleScreen
 import com.recapmaker.app.ui.subtitle.SubtitleViewModel
+import com.recapmaker.app.ui.subtitle.SubtitleEditorScreen
+import com.recapmaker.app.ui.subtitle.SubtitleEditorViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -63,6 +67,7 @@ class MainActivity : ComponentActivity() {
                         DashboardScreen(vm,
                             onEditor = { nav.navigate("editor") },
                             onSubtitle = { nav.navigate("subtitle") },
+                            onHistory = { nav.navigate("history") },
                             onSettings = { nav.navigate("settings") },
                             onLogout = {
                                 runBlocking { tokenManager.clear() }
@@ -71,14 +76,24 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    composable("history") {
+                        val vm: HistoryViewModel = hiltViewModel()
+                        HistoryScreen(onBack = { nav.popBackStack() }, vm = vm)
+                    }
+
                     composable("editor") {
                         val vm: EditorViewModel = hiltViewModel()
-                        EditorScreen(onBack = { nav.popBackStack() }, vm = vm)
+                        EditorScreen(onBack = { nav.popBackStack() }, onEditSubtitles = { nav.navigate("subtitle-editor") }, vm = vm)
                     }
 
                     composable("subtitle") {
                         val vm: SubtitleViewModel = hiltViewModel()
-                        SubtitleScreen(onBack = { nav.popBackStack() }, vm = vm)
+                        SubtitleScreen(onBack = { nav.popBackStack() }, onEditSubtitles = { nav.navigate("subtitle-editor") }, vm = vm)
+                    }
+
+                    composable("subtitle-editor") {
+                        val vm: SubtitleEditorViewModel = hiltViewModel()
+                        SubtitleEditorScreen(onBack = { nav.popBackStack() }, vm = vm)
                     }
 
                     composable("settings") {
