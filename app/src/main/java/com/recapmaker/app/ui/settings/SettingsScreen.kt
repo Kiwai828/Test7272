@@ -27,6 +27,7 @@ fun SettingsScreen(
     vm: AuthViewModel,
     onBack: () -> Unit,
     onLogout: () -> Unit,
+    onEmailLinked: () -> Unit = {},
 ) {
     val s = vm.state
     var showChangePw by remember { mutableStateOf(false) }
@@ -39,6 +40,7 @@ fun SettingsScreen(
             currentEmail = email ?: "" // will refresh from server
             showLinkEmail = false
             vm.resetLinkEmailDone()
+            onEmailLinked()
         }
     }
     LaunchedEffect(s.changePasswordDone) {

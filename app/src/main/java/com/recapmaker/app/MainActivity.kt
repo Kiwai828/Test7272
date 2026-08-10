@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
                                 runBlocking { tokenManager.clear() }
                                 nav.navigate("login") { popUpTo(0) { inclusive = true } }
                             },
+                            onEmailLinked = { dashVm.loadUserInfo() },
                         )
                     }
                 }

@@ -60,8 +60,10 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
                 if (!temp.exists() || temp.length() == 0L) { state = state.copy(error = "File ဖတ်မရ"); return@launch }
                 val mmr = MediaMetadataRetriever(); mmr.setDataSource(temp.absolutePath)
                 val dur = (mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) / 1000
+                val vw = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                val vh = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
                 mmr.release()
-                state = state.copy(videoLocalPath = temp.absolutePath, videoDuration = dur.toInt(), videoFilename = uri.lastPathSegment ?: "video.mp4")
+                state = state.copy(videoLocalPath = temp.absolutePath, videoDuration = dur.toInt(), videoFilename = uri.lastPathSegment ?: "video.mp4", videoWidth = vw, videoHeight = vh)
             } catch (e: Exception) { state = state.copy(error = "Video: ${e.message}") }
         }
     }
@@ -117,11 +119,8 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
                 ?: run { state = state.copy(isProcessing = false, processStatus = "", error = "Audio extract fail"); return@launch }
 
             state = state.copy(processStatus = "Transcribing...")
-            val af = File(audioPath)
-            val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP)
-            af.delete()
-
-            val sttResult = repo.groqStt(File(audioPath.takeIf { File(it).exists() } ?: run { val f = File(context.cacheDir, "stt_${System.currentTimeMillis()}.m4a"); f.writeBytes(android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)); f.absolutePath }))
+            // Upload the extracted audio directly — no need to delete/re-encode it
+            val sttResult = repo.groqStt(File(audioPath))
             val transcribedText = when (sttResult) {
                 is Result.Success -> sttResult.data.result?.text ?: ""
                 is Result.Error -> ""
@@ -150,7 +149,9 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
                 videoWidth = state.videoWidth, videoHeight = state.videoHeight,
                 subtitlePath = srtFile.absolutePath,
                 watermarkSize = state.fontSize.toInt(),
-                watermarkColor = "#FFFFFF",
+                watermarkColor = state.fontColor,
+                watermarkPosition = state.position,
+                watermarkBox = state.boxEnabled,
             )
             val result = FFmpegProcessor.process(state.videoLocalPath!!, context, subtitleOpts)
             if (result.success && result.outputPath != null) {
@@ -163,4 +164,5 @@ class SubtitleViewModel @Inject constructor(private val repo: MainRepository) : 
     }
 
     fun clearError() { state = state.copy(error = null) }
+    fun clearSuccess() { state = state.copy(success = null) }
 }

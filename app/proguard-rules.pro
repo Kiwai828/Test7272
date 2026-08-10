@@ -28,6 +28,10 @@
 -keep @androidx.room.Entity class *
 -dontwarn androidx.room.paging.**
 
+# ── ONNX Runtime (on-device RVC) ──
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+
 # ── Kotlin ──
 -dontwarn kotlinx.coroutines.**
 -dontwarn dagger.hilt.**

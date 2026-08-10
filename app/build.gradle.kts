@@ -21,6 +21,11 @@ android {
         versionCode = 2
         versionName = "2.2.0"
         buildConfigField("String", "API_BASE_URL", "\"https://zzzzz-mu.vercel.app\"")
+        ndk {
+            // On-device RVC (ONNX Runtime) is only practical on 64-bit — restrict ABIs
+            // to avoid shipping ~150 MB of unused ORT native libs (drops 32-bit devices)
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     // Only create the release signingConfig when a keystore is actually present.
@@ -82,6 +87,9 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // On-device RVC voice cloning (free, offline) — ONNX Runtime
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
     // Room
     implementation("androidx.room:room-runtime:2.6.1")

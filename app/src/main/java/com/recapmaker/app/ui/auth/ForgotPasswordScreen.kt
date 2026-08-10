@@ -40,25 +40,35 @@ fun ForgotPasswordScreen(vm: AuthViewModel, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary, modifier = Modifier.clickable { vm.resetState(); onBack() }.padding(8.dp))
             }
             Spacer(Modifier.height(20.dp))
-            Text(if (s.resetCodeSent) "Code ဖြည့်ပါ" else "Password ပြန်ယူရန်", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Text(if (s.resetCodeSent) "Email ထဲ ပို့ထားတဲ့ 6-digit code" else "မှတ်ပုံတင်ထားတဲ့ Email ဖြည့်ပါ", fontSize = 13.sp, color = TextDim, textAlign = TextAlign.Center)
+            Text(when { s.passwordReset -> "ပြောင်းပြီးပါပြီ!"; s.resetCodeSent -> "Code ဖြည့်ပါ"; else -> "Password ပြန်ယူရန်" }, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text(when { s.passwordReset -> "Login ပြန်ဝင်နိုင်ပါပြီ"; s.resetCodeSent -> "Email ထဲ ပို့ထားတဲ့ 6-digit code"; else -> "မှတ်ပုံတင်ထားတဲ့ Email ဖြည့်ပါ" }, fontSize = 13.sp, color = TextDim, textAlign = TextAlign.Center)
             Spacer(Modifier.height(24.dp))
 
-            if (!s.resetCodeSent) {
-                AppTextField(email, { email = it }, "Email", imeAction = ImeAction.Done, onImeAction = { fm.clearFocus(); vm.forgotPassword(email.trim()) })
-                Spacer(Modifier.height(16.dp))
-                ErrorBanner(s.error)
-                PrimaryButton("Send Code", { fm.clearFocus(); vm.forgotPassword(email.trim()) }, s.isLoading)
-            } else {
-                AppTextField(code, { if (it.length <= 6) code = it.filter { c -> c.isDigit() } }, "6-digit Code",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next))
-                Spacer(Modifier.height(12.dp))
-                PasswordField(newPw, { newPw = it }, "New Password", imeAction = ImeAction.Next)
-                Spacer(Modifier.height(12.dp))
-                PasswordField(confirmPw, { confirmPw = it }, "Confirm Password", onImeAction = { fm.clearFocus() })
-                Spacer(Modifier.height(16.dp))
-                ErrorBanner(s.error)
-                PrimaryButton("Reset Password", { fm.clearFocus(); vm.resetPassword(email.trim(), code.trim(), newPw, confirmPw) }, s.isLoading, color = Emerald)
+            when {
+                s.passwordReset -> {
+                    Surface(color = Emerald.copy(0.12f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text("✅ Password အသစ် ပြောင်းပြီးပါပြီ!", color = Emerald, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(16.dp), textAlign = TextAlign.Center)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    PrimaryButton("Login သို့ ပြန်သွားရန်", { vm.resetState(); onBack() }, color = Emerald)
+                }
+                !s.resetCodeSent -> {
+                    AppTextField(email, { email = it }, "Email", imeAction = ImeAction.Done, onImeAction = { fm.clearFocus(); vm.forgotPassword(email.trim()) })
+                    Spacer(Modifier.height(16.dp))
+                    ErrorBanner(s.error)
+                    PrimaryButton("Send Code", { fm.clearFocus(); vm.forgotPassword(email.trim()) }, s.isLoading)
+                }
+                else -> {
+                    AppTextField(code, { if (it.length <= 6) code = it.filter { c -> c.isDigit() } }, "6-digit Code",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next))
+                    Spacer(Modifier.height(12.dp))
+                    PasswordField(newPw, { newPw = it }, "New Password", imeAction = ImeAction.Next)
+                    Spacer(Modifier.height(12.dp))
+                    PasswordField(confirmPw, { confirmPw = it }, "Confirm Password", onImeAction = { fm.clearFocus() })
+                    Spacer(Modifier.height(16.dp))
+                    ErrorBanner(s.error)
+                    PrimaryButton("Reset Password", { fm.clearFocus(); vm.resetPassword(email.trim(), code.trim(), newPw, confirmPw) }, s.isLoading, color = Emerald)
+                }
             }
         }
         }

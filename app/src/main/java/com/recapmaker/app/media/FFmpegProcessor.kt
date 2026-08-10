@@ -208,41 +208,42 @@ object FFmpegProcessor {
             sb.append("-i $clip ")
         }
 
+        // TTS audio is an extra input appended after the clips (fixes the previous
+        // bug where the audio chain referenced an input that was never added)
+        val ttsIdx = if (opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()) {
+            sb.append("-i ${opts.ttsAudioPath} ")
+            allClips.size
+        } else -1
+
         val filterParts = mutableListOf<String>()
-        val labelMap = mutableMapOf<Int, String>()
-        allClips.forEachIndexed { i, _ ->
-            labelMap[i] = "[$i:v]"
-        }
 
         if (allClips.size == 2) {
-            filterParts.add("${labelMap[0]}xfade=transition=fade:duration=$fadeDur:offset=3[vout]")
+            filterParts.add("[0:v][1:v]xfade=transition=fade:duration=$fadeDur:offset=3[vout]")
         } else {
             var prev = "[0:v]"
             for (i in 1 until allClips.size) {
                 val offset = (i * 3.0)
-                filterParts.add("${prev}[${labelMap[i]!!.substringAfter('[').substringBefore(']')}:v]xfade=transition=fade:duration=$fadeDur:offset=$offset[xf$i]")
+                filterParts.add("${prev}[$i:v]xfade=transition=fade:duration=$fadeDur:offset=$offset[xf$i]")
                 prev = "[xf$i]"
             }
             filterParts.add("$prev[vout]")
         }
 
-        val audioChain = StringBuilder()
-        val audioParts = mutableListOf<String>()
-        if (opts.ttsAudioPath != null && File(opts.ttsAudioPath).exists()) {
-            audioParts.add("[${allClips.size}:a]")
-        }
-        allClips.forEachIndexed { i, _ ->
-            if (i > 0) audioParts.add("[$i:a]")
-        }
-        if (audioParts.isNotEmpty()) {
-            audioChain.append("${audioParts.joinToString("")}amix=inputs=${audioParts.size}:duration=first[aout]")
-            filterParts.add(audioChain.toString())
+        // Audio: clip 0 + remaining clips + optional TTS (previously clip 0's audio
+        // was dropped and the TTS input index pointed at a non-existent input)
+        val audioParts = mutableListOf("[0:a]")
+        for (i in 1 until allClips.size) audioParts.add("[$i:a]")
+        if (ttsIdx >= 0) audioParts.add("[$ttsIdx:a]")
+        val hasAudio = audioParts.isNotEmpty()
+        if (hasAudio) {
+            filterParts.add("${audioParts.joinToString("")}amix=inputs=${audioParts.size}:duration=first[aout]")
         }
 
         val origKbps = getVideoBitrateKbps(originalPath)
         val targetKbps = if (origKbps > 0) origKbps.coerceIn(800, 20_000) else 4_000
         val filterStr = filterParts.joinToString(";")
-        return "${sb}-filter_complex $filterStr -map [vout] -map [aout] -c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart -y $output"
+        val mapAudio = if (hasAudio) "-map [aout] " else "-map 0:a? "
+        return "${sb}-filter_complex $filterStr -map [vout] $mapAudio-c:v mpeg4 -q:v 1 -b:v ${targetKbps}k -c:a aac -b:a 192k -movflags +faststart -y $output"
     }
 
     // ─────────────────────────────────────────
@@ -307,7 +308,9 @@ object FFmpegProcessor {
 
         if (hasSubtitle) {
             val escapedSubPath = opts.subtitlePath!!.replace("\\", "/").replace(":", "\\:")
-            vfParts.add("subtitles='$escapedSubPath':force_style='FontSize=${opts.watermarkSize.coerceIn(10, 32)},PrimaryColour=&H${opts.watermarkColor.removePrefix("#")},Alignment=2'")
+            val align = if (opts.watermarkPosition.startsWith("top")) 8 else 2 // libass: 2=bottom-center, 8=top-center
+            val style = if (opts.watermarkBox) "BorderStyle=3,BackColour=&H99000000" else "BorderStyle=1,Outline=1,Shadow=0"
+            vfParts.add("subtitles='$escapedSubPath':force_style='FontSize=${opts.watermarkSize.coerceIn(10, 32)},PrimaryColour=&H${opts.watermarkColor.removePrefix("#")},Alignment=$align,$style'")
         }
 
         // ── Audio filter parts ──

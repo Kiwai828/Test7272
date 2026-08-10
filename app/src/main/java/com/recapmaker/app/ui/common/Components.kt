@@ -156,14 +156,14 @@ fun SectionCard(title: String, icon: ImageVector? = null, iconColor: Color = Pur
 // ══════════════════════════════════
 
 @Composable
-fun EffectToggle(label: String, icon: ImageVector, checked: Boolean, switchColor: Color = Purple, onToggle: (Boolean) -> Unit) {
+fun EffectToggle(label: String, icon: ImageVector, checked: Boolean, switchColor: Color = Purple, enabled: Boolean = true, onToggle: (Boolean) -> Unit) {
     Surface(color = if (checked) switchColor.copy(0.06f) else Color.Transparent, shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, if (checked) switchColor.copy(0.2f) else Purple.copy(0.07f))) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = if (checked) switchColor else TextDim, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Text(label, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            Switch(checked = checked, onCheckedChange = onToggle, colors = SwitchDefaults.colors(
+            Switch(checked = checked, onCheckedChange = onToggle, enabled = enabled, colors = SwitchDefaults.colors(
                 checkedTrackColor = switchColor, checkedThumbColor = Color.White, uncheckedTrackColor = SurfaceDark, uncheckedBorderColor = CardBorder))
         }
     }
@@ -243,7 +243,8 @@ fun VideoPreviewPlayer(
     var videoRatio by remember { mutableFloatStateOf(16f / 9f) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val player = remember {
+    // Key on uri so picking a different video actually reloads the preview
+    val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             prepare()

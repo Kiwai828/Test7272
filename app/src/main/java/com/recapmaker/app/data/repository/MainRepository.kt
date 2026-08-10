@@ -72,12 +72,21 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         } else Result.Error("Failed to load config")
     } catch (e: Exception) { Result.Error(e.message ?: "Network error") }
 
+    // Map the app's voice names to Azure full short names (locale prefix is required) + gender
+    private val edgeVoices = mapOf(
+        "ThihaNeural" to ("my-MM-ThihaNeural" to "Male"),
+        "NilarNeural" to ("my-MM-NilarNeural" to "Female"),
+    )
+    private fun edgeVoiceName(voice: String): Pair<String, String> =
+        edgeVoices[voice] ?: (if (voice.contains('-')) voice to "Male" else "my-MM-$voice" to "Male")
+
     suspend fun edgeTtsDirect(text: String, voice: String, apiKey: String, region: String = "eastus"): Result<File> {
         return try {
         val client = okhttp3.OkHttpClient()
+        val (fullVoice, gender) = edgeVoiceName(voice)
         val ssml = """
             <speak version='1.0' xml:lang='my-MM'>
-                <voice xml:lang='my-MM' xml:gender='Male' name='${voice}'>
+                <voice xml:lang='my-MM' xml:gender='$gender' name='$fullVoice'>
                     $text
                 </voice>
             </speak>

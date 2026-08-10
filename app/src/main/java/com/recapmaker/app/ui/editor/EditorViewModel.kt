@@ -19,10 +19,12 @@ import com.recapmaker.app.data.repository.Result
 import com.recapmaker.app.media.FFmpegProcessor
 import com.recapmaker.app.media.VideoDownloader
 import com.recapmaker.app.media.VideoProcessService
+import com.recapmaker.app.media.rvc.RvcVoiceCloner
 import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -51,17 +53,26 @@ data class EditorState(
     val extraClips: List<String> = emptyList(),
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
+    val rvcEnabled: Boolean = false, val rvcSynthPath: String? = null, val rvcHubertPath: String? = null,
+    val rvcRmvpePath: String? = null, val rvcPitch: Int = 0,
 )
 
+
 @HiltViewModel
-class EditorViewModel @Inject constructor(private val repo: MainRepository, private val historyDao: VideoHistoryDao) : ViewModel() {
+class EditorViewModel @Inject constructor(
+    private val repo: MainRepository,
+    private val historyDao: VideoHistoryDao,
+    @ApplicationContext private val appContext: Context,
+) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
-    init { loadCoins(); loadHistory(); checkEdgeTts() }
+    init { loadCoins(); loadHistory(); checkEdgeTts(); restoreRvcModels() }
 
     private fun checkEdgeTts() { viewModelScope.launch { when (val r = repo.getEdgeTtsConfig()) { is Result.Success -> state = state.copy(edgeTtsAvailable = true); is Result.Error -> state = state.copy(edgeTtsAvailable = false) } } }
 
     private fun loadCoins() { viewModelScope.launch { when (val r = repo.getUserInfo()) { is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver, pricingTiers = r.data.pricing_tiers ?: emptyList()); is Result.Error -> {} } } }
     val costText: String get() { val d = state.videoDuration; if (d == 0 && state.videoLocalPath == null) return ""; val c = getCostForDuration(d, state.pricingTiers); if (c == -1) return "(ရှည်လွန်း)"; if (c == 0) return "(အခမဲ့)"; return if (state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)) "(🥇 $c Gold)" else "($c Coins)" }
+    // RVC needs at least the synth generator + HuBERT embedder to convert a voice
+    val rvcReady: Boolean get() = state.rvcSynthPath != null && state.rvcHubertPath != null
     val filteredVoices: List<VoiceInfo> get() { val s = if (state.voiceTab == "google") VoiceData.googleVoices else VoiceData.microsoftVoices; val q = state.voiceSearch.lowercase().trim(); return if (q.isEmpty()) s else s.filter { it.label.lowercase().contains(q) || it.gender.name.lowercase().contains(q) } }
 
     // ═══ VIDEO SOURCE ═══
@@ -120,16 +131,74 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
     fun setBassAmount(v: Float) { state = state.copy(audioEffects = state.audioEffects.copy(bassAmount = v)) }
 
     // ═══ MULTI-CLIP ═══
-    fun addExtraClip(path: String) { state = state.copy(extraClips = state.extraClips + path) }
-    fun removeExtraClip(path: String) { state = state.copy(extraClips = state.extraClips - path) }
+    // Content URIs can't be read by FFmpeg — copy each clip into cache before adding
+    fun addExtraClip(uri: Uri, context: Context) {
+        viewModelScope.launch {
+            val f = File(context.cacheDir, "clip_${System.currentTimeMillis()}.mp4")
+            if (uri.copyToFile(context, f) && f.length() > 0) state = state.copy(extraClips = state.extraClips + f.absolutePath)
+            else state = state.copy(error = "Clip ဖတ်မရ")
+        }
+    }
+    fun removeExtraClip(path: String) {
+        state = state.copy(extraClips = state.extraClips - path)
+        try { File(path).delete() } catch (_: Exception) {}
+    }
 
     // ═══ SUBTITLE ═══
     fun setSubtitleEnabled(v: Boolean) { state = state.copy(subtitleEnabled = v) }
     fun setSubtitleText(v: String) { state = state.copy(subtitleText = v) }
 
     // ═══ EDGE TTS ═══
-    fun setUseEdgeTts(v: Boolean) { state = state.copy(useEdgeTts = v) }
+    fun setUseEdgeTts(v: Boolean) {
+        if (!v) { state = state.copy(useEdgeTts = false); return }
+        // Edge TTS (Azure) only supports the Microsoft Neural voices — switch off Google voices
+        val voice = if (VoiceData.isGeminiVoice(state.selectedVoice)) "ThihaNeural" else state.selectedVoice
+        state = state.copy(useEdgeTts = true, selectedVoice = voice, voiceTab = "microsoft")
+    }
     fun setEdgeTtsAvailable(v: Boolean) { state = state.copy(edgeTtsAvailable = v) }
+
+    // ═══ ON-DEVICE RVC VOICE CLONE (free, offline) ═══
+    private fun rvcPrefs() = appContext.getSharedPreferences("rvc_models", Context.MODE_PRIVATE)
+
+    private fun restoreRvcModels() {
+        val p = rvcPrefs()
+        val synth = p.getString("synth", null)?.takeIf { File(it).exists() }
+        val hubert = p.getString("hubert", null)?.takeIf { File(it).exists() }
+        val rmvpe = p.getString("rmvpe", null)?.takeIf { File(it).exists() }
+        state = state.copy(
+            rvcEnabled = p.getBoolean("enabled", false),
+            rvcSynthPath = synth, rvcHubertPath = hubert, rvcRmvpePath = rmvpe,
+            rvcPitch = p.getInt("pitch", 0),
+        )
+    }
+
+    fun setRvcEnabled(v: Boolean) { state = state.copy(rvcEnabled = v); rvcPrefs().edit().putBoolean("enabled", v).apply() }
+
+    fun setRvcModel(kind: String, uri: Uri, context: Context) {
+        viewModelScope.launch {
+            val name = when (kind) { "synth" -> "synth.onnx"; "hubert" -> "hubert.onnx"; else -> "rmvpe.onnx" }
+            val f = File(context.cacheDir, "rvc_$name")
+            if (uri.copyToFile(context, f) && f.length() > 0L) {
+                val p = rvcPrefs()
+                when (kind) {
+                    "synth" -> { state = state.copy(rvcSynthPath = f.absolutePath); p.edit().putString("synth", f.absolutePath).apply() }
+                    "hubert" -> { state = state.copy(rvcHubertPath = f.absolutePath); p.edit().putString("hubert", f.absolutePath).apply() }
+                    else -> { state = state.copy(rvcRmvpePath = f.absolutePath); p.edit().putString("rmvpe", f.absolutePath).apply() }
+                }
+            } else state = state.copy(error = "Model file ဖတ်မရ")
+        }
+    }
+
+    fun removeRvcModel(kind: String) {
+        val p = rvcPrefs()
+        when (kind) {
+            "synth" -> { state.rvcSynthPath?.let { runCatching { File(it).delete() } }; state = state.copy(rvcSynthPath = null); p.edit().remove("synth").apply() }
+            "hubert" -> { state.rvcHubertPath?.let { runCatching { File(it).delete() } }; state = state.copy(rvcHubertPath = null); p.edit().remove("hubert").apply() }
+            else -> { state.rvcRmvpePath?.let { runCatching { File(it).delete() } }; state = state.copy(rvcRmvpePath = null); p.edit().remove("rmvpe").apply() }
+        }
+    }
+
+    fun setRvcPitch(v: Int) { state = state.copy(rvcPitch = v); rvcPrefs().edit().putInt("pitch", v).apply() }
 
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }
@@ -175,6 +244,25 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
                 }
             }
 
+            // ── 2.5 Voice Clone (RVC on-device) — convert the TTS voice into the chosen person's voice ──
+            if (ttsAudioPath != null && state.rvcEnabled && state.rvcReady) {
+                state = state.copy(processStatus = "RVC အသံပြောင်းနေသည် (on-device)...")
+                val synth = File(state.rvcSynthPath!!)
+                val hubert = File(state.rvcHubertPath!!)
+                val rmvpe = state.rvcRmvpePath?.let { File(it) }
+                when (val r = RvcVoiceCloner.convert(context, File(ttsAudioPath), synth, hubert, rmvpe, state.rvcPitch)) {
+                    is RvcVoiceCloner.Result.Success -> {
+                        File(ttsAudioPath).delete()
+                        ttsAudioPath = r.file.absolutePath
+                    }
+                    is RvcVoiceCloner.Result.Error -> {
+                        if (cost > 0) { repo.refundCoins(cost, "Failed", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
+                        state = state.copy(isProcessing = false, processStatus = "", error = "Voice Clone: ${r.message}")
+                        return@launch
+                    }
+                }
+            }
+
             // ── 3. SRT Subtitles ──
             var srtPath: String? = null
             if (state.subtitleEnabled && state.aiText.isNotBlank() && ttsAudioPath != null) {
@@ -187,15 +275,14 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
             state.logoUri?.let { uri -> val f = File(context.cacheDir, "logo_${System.currentTimeMillis()}.png"); if (uri.copyToFile(context, f) && f.exists()) logoPath = f.absolutePath }
 
             // ── 5. Background music ──
+            // Note: no pre-ducking here — FFmpegProcessor.buildCommand already applies
+            // sidechaincompress (auto-duck) when bg music + TTS are both present. Mixing the
+            // TTS into the music file first duplicated the voice track and ducked it twice.
             var bgMusicPath: String? = null
             state.bgMusicUri?.let { uri ->
                 state = state.copy(processStatus = "Preparing background music...")
                 val f = File(context.cacheDir, "bgmusic_${System.currentTimeMillis()}.mp3")
-                if (uri.copyToFile(context, f) && f.exists()) {
-                    bgMusicPath = if (state.autoDuck && ttsAudioPath != null) {
-                        FFmpegProcessor.autoDuckAudio(f.absolutePath, ttsAudioPath, context) ?: f.absolutePath
-                    } else f.absolutePath
-                }
+                if (uri.copyToFile(context, f) && f.exists()) bgMusicPath = f.absolutePath
             }
 
             // ── 6. Build options + start service ──
@@ -383,6 +470,7 @@ class EditorViewModel @Inject constructor(private val repo: MainRepository, priv
         val srtFile = File(context.cacheDir, "subtitles_${System.currentTimeMillis()}.srt")
         try {
             val audioDur = FFmpegProcessor.getAudioDuration(audioPath)
+            if (audioDur <= 0.2) return null // unknown/zero duration → invalid SRT timestamps
             val chunkDur = audioDur / chunks.size.coerceAtLeast(1)
             srtFile.printWriter().use { pw ->
                 chunks.forEachIndexed { i, chunk ->
