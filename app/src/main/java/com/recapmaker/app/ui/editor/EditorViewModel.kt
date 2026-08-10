@@ -325,7 +325,7 @@ class EditorViewModel @Inject constructor(
             }
 
             // ── 2.5 Voice Clone (RVC on-device) — convert the TTS voice into the chosen person's voice ──
-            if (ttsAudioPath != null && state.rvcEnabled && state.rvcReady) {
+            if (ttsAudioPath != null && state.rvcEnabled && rvcReady) {
                 state = state.copy(processStatus = "RVC အသံပြောင်းနေသည် (on-device)...")
                 val synth = File(state.rvcSynthPath!!)
                 val hubert = File(state.rvcHubertPath!!)
