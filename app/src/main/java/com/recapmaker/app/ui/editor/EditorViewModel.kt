@@ -61,6 +61,7 @@ data class EditorState(
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
     val rvcEnabled: Boolean = false, val rvcSynthPath: String? = null, val rvcHubertPath: String? = null,
     val rvcRmvpePath: String? = null, val rvcPitch: Int = 0,
+    val rvcSamplePath: String? = null, val rvcSampleName: String? = null,
     val rvcDownloading: Boolean = false, val rvcDownloadProgress: Float = 0f, val rvcDownloadStatus: String = "",
 )
 
@@ -172,10 +173,12 @@ class EditorViewModel @Inject constructor(
         val synth = p.getString("synth", null)?.takeIf { File(it).exists() }
         val hubert = p.getString("hubert", null)?.takeIf { File(it).exists() }
         val rmvpe = p.getString("rmvpe", null)?.takeIf { File(it).exists() }
+        val sample = p.getString("sample", null)?.takeIf { File(it).exists() }
         state = state.copy(
             rvcEnabled = p.getBoolean("enabled", false),
             rvcSynthPath = synth, rvcHubertPath = hubert, rvcRmvpePath = rmvpe,
             rvcPitch = p.getInt("pitch", 0),
+            rvcSamplePath = sample, rvcSampleName = p.getString("sample_name", null),
         )
     }
 
@@ -206,6 +209,32 @@ class EditorViewModel @Inject constructor(
     }
 
     fun setRvcPitch(v: Int) { state = state.copy(rvcPitch = v); rvcPrefs().edit().putInt("pitch", v).apply() }
+
+    /** Voice sample of the person you want to clone — any audio format (mp3/m4a/wav/ogg/aac/flac...). */
+    fun onRvcSampleSelected(uri: Uri, context: Context) {
+        viewModelScope.launch {
+            val dir = File(context.filesDir, "rvc").apply { mkdirs() }
+            val name = runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (i >= 0) c.getString(i) else null
+                }
+            }.getOrNull() ?: uri.lastPathSegment ?: "voice_sample.m4a"
+            val ext = name.substringAfterLast('.', "m4a").takeIf { it.length in 1..5 } ?: "m4a"
+            val f = File(dir, "voice_sample_${System.currentTimeMillis()}.$ext")
+            if (uri.copyToFile(context, f) && f.length() > 0L) {
+                val p = rvcPrefs()
+                state = state.copy(rvcSamplePath = f.absolutePath, rvcSampleName = name)
+                p.edit().putString("sample", f.absolutePath).putString("sample_name", name).apply()
+            } else state = state.copy(error = "အသံဖိုင် ဖတ်မရပါ")
+        }
+    }
+
+    fun removeRvcSample() {
+        state.rvcSamplePath?.let { runCatching { File(it).delete() } }
+        state = state.copy(rvcSamplePath = null, rvcSampleName = null)
+        rvcPrefs().edit().remove("sample").remove("sample_name").apply()
+    }
 
     /**
      * One-tap download of the default voice-clone model bundle (synth + hubert + rmvpe)
