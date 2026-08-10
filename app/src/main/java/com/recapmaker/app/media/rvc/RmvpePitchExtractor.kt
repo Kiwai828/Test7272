@@ -2,6 +2,7 @@ package com.recapmaker.app.media.rvc
 
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.TensorInfo
 import android.util.Log
 import java.io.Closeable
 import kotlin.math.ln
@@ -19,6 +20,16 @@ class PitchData(val pitchf: FloatArray, val pitchCoarse: LongArray)
 
 class RmvpePitchExtractor(private val session: OrtSession) : Closeable {
 
+    // Two common exports: {"waveform","threshold"} (voice-changer style) or a
+    // single {"input"} (lj1995/WIAWAN style). Pick whichever this model has.
+    private val wavInput: String = pickWavInput()
+    private val thrInput: String? = if ("threshold" in session.inputInfo.keys) "threshold" else null
+    private val outputName: String = session.outputInfo.keys.firstOrNull() ?: ""
+
+    init {
+        Log.i(TAG, "init: wav=$wavInput thr=$thrInput out=$outputName")
+    }
+
     fun extract(
         audio16k: FloatArray,
         f0UpKey: Int = 0,
@@ -26,29 +37,40 @@ class RmvpePitchExtractor(private val session: OrtSession) : Closeable {
     ): PitchData {
         val t0 = System.currentTimeMillis()
         val env = OrtRuntime.env
-
-        env.floatTensor(audio16k, longArrayOf(1L, audio16k.size.toLong())).use { wav ->
-            env.floatTensor(floatArrayOf(threshold), longArrayOf(1L)).use { thr ->
-                session.run(mapOf("waveform" to wav, "threshold" to thr)).use { result ->
-                    val pitchTensor = result.iterator().next().value as OnnxTensor
-                    val raw = pitchTensor.copyFloats()
-                    val shifted = if (f0UpKey == 0) raw else shift(raw, f0UpKey)
-                    val coarse = melQuantize(shifted)
-                    val elapsed = System.currentTimeMillis() - t0
-                    Log.i(
-                        TAG,
-                        "extract: audio=${audio16k.size} samples → pitchf[${shifted.size}] " +
-                            "(voiced=${coarse.count { it > 1 }}/${coarse.size}) in ${elapsed}ms",
-                    )
-                    return PitchData(shifted, coarse)
-                }
+        val inputs = mutableMapOf<String, OnnxTensor>()
+        try {
+            inputs[wavInput] = env.floatTensor(audio16k, longArrayOf(1L, audio16k.size.toLong()))
+            thrInput?.let { inputs[it] = env.floatTensor(floatArrayOf(threshold), longArrayOf(1L)) }
+            val outputSet = if (outputName.isNotBlank()) setOf(outputName) else null
+            session.run(inputs, outputSet).use { result ->
+                val pitchTensor = result.iterator().next().value as OnnxTensor
+                val raw = pitchTensor.copyFloats()
+                val shifted = if (f0UpKey == 0) raw else shift(raw, f0UpKey)
+                val coarse = melQuantize(shifted)
+                val elapsed = System.currentTimeMillis() - t0
+                Log.i(
+                    TAG,
+                    "extract: audio=${audio16k.size} samples → pitchf[${shifted.size}] " +
+                        "(voiced=${coarse.count { it > 1 }}/${coarse.size}) in ${elapsed}ms",
+                )
+                return PitchData(shifted, coarse)
             }
+        } finally {
+            inputs.values.forEach { runCatching { it.close() } }
         }
     }
 
     override fun close() {
         Log.d(TAG, "close")
         session.close()
+    }
+
+    private fun pickWavInput(): String {
+        val keys = session.inputInfo.keys
+        for (k in listOf("waveform", "input", "source", "audio", "wav")) {
+            if (k in keys) return k
+        }
+        return keys.firstOrNull() ?: error("rmvpe ONNX has no inputs")
     }
 
     private fun shift(pitchf: FloatArray, semitones: Int): FloatArray {

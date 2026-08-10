@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.recapmaker.app.media.rvc.DefaultRvcModels
 import com.recapmaker.app.ui.common.*
 
 @Composable
@@ -170,6 +171,34 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     }
                     AnimatedVisibility(s.rvcEnabled) {
                         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // One-tap download of the default voice bundle — no PC needed
+                            if (s.rvcDownloading) {
+                                Surface(color = Rose.copy(.06f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.2f)), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text(s.rvcDownloadStatus.ifBlank { "Downloading..." }, color = TextPrimary, fontSize = 11.sp)
+                                        Spacer(Modifier.height(6.dp))
+                                        LinearProgressIndicator(progress = { s.rvcDownloadProgress }, Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = Rose, trackColor = CardBorder)
+                                        Spacer(Modifier.height(4.dp))
+                                        Text("${(s.rvcDownloadProgress * 100).toInt()}% — ${DefaultRvcModels.voiceName}", color = TextDim, fontSize = 10.sp)
+                                    }
+                                }
+                            } else if (s.rvcSynthPath == null) {
+                                Surface(onClick = { vm.downloadDefaultVoice() }, color = Rose.copy(.12f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.35f)), modifier = Modifier.fillMaxWidth()) {
+                                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.CloudDownload, null, tint = Rose, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text("Voice model ဒေါင်းလုဒ်လုပ်ရန် (${DefaultRvcModels.voiceName})", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("~${DefaultRvcModels.totalMb} MB — တစ်ခါသာ လိုပါတယ်", color = TextDim, fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    HorizontalDivider(Modifier.weight(1f), color = CardBorder)
+                                    Text("  OR  ", color = TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    HorizontalDivider(Modifier.weight(1f), color = CardBorder)
+                                }
+                            }
                             // The voice to clone IS the RVC model — these 3 slots are where you add it
                             Text("ကိုယ် clone လုပ်မဲ့ အသံ ထည့်ရန်:", color = TextDim, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             if (!vm.rvcReady) {

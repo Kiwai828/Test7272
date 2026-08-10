@@ -19,14 +19,20 @@ import com.recapmaker.app.data.repository.Result
 import com.recapmaker.app.media.FFmpegProcessor
 import com.recapmaker.app.media.VideoDownloader
 import com.recapmaker.app.media.VideoProcessService
+import com.recapmaker.app.media.rvc.DefaultRvcModels
 import com.recapmaker.app.media.rvc.RvcVoiceCloner
 import com.arthenica.ffmpegkit.ReturnCode
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -55,6 +61,7 @@ data class EditorState(
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
     val rvcEnabled: Boolean = false, val rvcSynthPath: String? = null, val rvcHubertPath: String? = null,
     val rvcRmvpePath: String? = null, val rvcPitch: Int = 0,
+    val rvcDownloading: Boolean = false, val rvcDownloadProgress: Float = 0f, val rvcDownloadStatus: String = "",
 )
 
 
@@ -199,6 +206,79 @@ class EditorViewModel @Inject constructor(
     }
 
     fun setRvcPitch(v: Int) { state = state.copy(rvcPitch = v); rvcPrefs().edit().putInt("pitch", v).apply() }
+
+    /**
+     * One-tap download of the default voice-clone model bundle (synth + hubert + rmvpe)
+     * from HuggingFace. Files land in filesDir/rvc/ (persistent), then the model paths
+     * are wired into state + prefs and the toggle is switched ON.
+     */
+    fun downloadDefaultVoice() {
+        if (state.rvcDownloading) return
+        viewModelScope.launch(Dispatchers.IO) {
+            state = state.copy(rvcDownloading = true, rvcDownloadProgress = 0f, rvcDownloadStatus = "Connecting...", error = null)
+            try {
+                val dir = File(appContext.filesDir, "rvc").apply { mkdirs() }
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(300, TimeUnit.SECONDS)
+                    .build()
+                val totalBytes = DefaultRvcModels.totalMb * 1024L * 1024L
+                var completedBytes = 0L
+                var synthPath: String? = null
+                var hubertPath: String? = null
+                var rmvpePath: String? = null
+                for (m in DefaultRvcModels.all) {
+                    state = state.copy(rvcDownloadStatus = "Downloading ${m.file} (${m.sizeMb} MB)...")
+                    val target = File(dir, m.file)
+                    val req = Request.Builder().url(m.url).build()
+                    client.newCall(req).execute().use { resp ->
+                        if (!resp.isSuccessful) error("HTTP ${resp.code} — ${m.file}")
+                        val body = resp.body ?: error("Empty response for ${m.file}")
+                        val tmp = File(dir, m.file + ".part")
+                        var lastUpdate = 0L
+                        body.byteStream().use { input ->
+                            FileOutputStream(tmp).use { out ->
+                                val buf = ByteArray(256 * 1024)
+                                var read: Int
+                                var done = 0L
+                                while (input.read(buf).also { read = it } != -1) {
+                                    out.write(buf, 0, read)
+                                    done += read
+                                    if (done - lastUpdate >= 1024L * 1024L) {
+                                        lastUpdate = done
+                                        val overall = ((completedBytes + done).toFloat() / totalBytes).coerceIn(0f, 1f)
+                                        state = state.copy(rvcDownloadProgress = overall)
+                                    }
+                                }
+                            }
+                        }
+                        if (tmp.length() < 1024L * 1024L) error("${m.file} download incomplete")
+                        if (target.exists()) target.delete()
+                        tmp.renameTo(target)
+                    }
+                    completedBytes += m.sizeMb * 1024L * 1024L
+                    when (m.file) {
+                        "synth.onnx" -> synthPath = target.absolutePath
+                        "hubert.onnx" -> hubertPath = target.absolutePath
+                        else -> rmvpePath = target.absolutePath
+                    }
+                }
+                rvcPrefs().edit()
+                    .putString("synth", synthPath)
+                    .putString("hubert", hubertPath)
+                    .putString("rmvpe", rmvpePath)
+                    .putBoolean("enabled", true)
+                    .apply()
+                state = state.copy(
+                    rvcSynthPath = synthPath, rvcHubertPath = hubertPath, rvcRmvpePath = rmvpePath,
+                    rvcEnabled = true, rvcDownloading = false, rvcDownloadProgress = 1f, rvcDownloadStatus = "",
+                    success = "✅ Voice model ဒေါင်းလုဒ် ပြီးပါပြီ — ${DefaultRvcModels.voiceName}",
+                )
+            } catch (e: Exception) {
+                state = state.copy(rvcDownloading = false, rvcDownloadStatus = "", error = "Download: ${e.message}")
+            }
+        }
+    }
 
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }
