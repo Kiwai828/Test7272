@@ -92,9 +92,17 @@ object RvcVoiceCloner {
             // 3. Voice conversion
             val out = pipeline.convert(floats, f0UpKey = f0UpKey)
 
+            // Fixed-window embedders emit 99 frames per 32000 samples, so the
+            // synth output can run ~1% short of the original clip. Resample to
+            // the exact input duration so the re-muxed video stays in sync.
+            val expectedLen = (floats.size.toLong() * pipeline.outputSampleRate / INPUT_RATE).toInt()
+            val timed = if (out.size != expectedLen && expectedLen > 0 && out.size > 0)
+                resampleTo(out, expectedLen)
+            else out
+
             // 4. WAV → AAC m4a (matches the video muxer's expectations)
             val wav = File(context.cacheDir, "rvc_out_${System.currentTimeMillis()}.wav")
-            wav.outputStream().use { WavIo.write(it, out, pipeline.outputSampleRate) }
+            wav.outputStream().use { WavIo.write(it, timed, pipeline.outputSampleRate) }
             val m4a = File(context.cacheDir, "rvc_out_${System.currentTimeMillis()}.m4a")
             val enc = FFmpegKit.execute("-y -i ${wav.absolutePath} -c:a aac -b:a 128k ${m4a.absolutePath}")
             wav.delete()
@@ -118,6 +126,25 @@ object RvcVoiceCloner {
         val bytes = raw.readBytes()
         val out = FloatArray(bytes.size / 4)
         ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(out)
+        return out
+    }
+
+    // Linear-interpolation resampler for tiny timing corrections (audio length
+    // mismatches of a percent or two). Cheap and artifact-free at this scale.
+    private fun resampleTo(input: FloatArray, targetSize: Int): FloatArray {
+        val out = FloatArray(targetSize)
+        if (input.size == 1) {
+            java.util.Arrays.fill(out, input[0])
+            return out
+        }
+        val step = (input.size - 1).toDouble() / (targetSize - 1).toDouble()
+        for (i in 0 until targetSize) {
+            val pos = i * step
+            val i0 = pos.toInt()
+            val frac = (pos - i0).toFloat()
+            val i1 = minOf(i0 + 1, input.size - 1)
+            out[i] = input[i0] * (1f - frac) + input[i1] * frac
+        }
         return out
     }
 
