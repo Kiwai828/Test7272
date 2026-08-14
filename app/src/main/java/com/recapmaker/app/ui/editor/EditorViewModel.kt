@@ -289,7 +289,16 @@ class EditorViewModel @Inject constructor(
             }
             state = state.copy(aiText = normalizedText)
 
-            // ── 1. Coins ──
+            // ── 1. VoxCPM preflight before any coin deduction ──
+            if (state.useVoxCpm && normalizedText.isNotBlank()) {
+                state = state.copy(processStatus = "VoxCPM service စစ်ဆေးနေသည်...")
+                if (!VoxCpmClient.isAvailable()) {
+                    state = state.copy(isProcessing = false, processStatus = "", error = "VoxCPM service မရနိုင်သေးပါ။ ခဏနောက် ပြန်စမ်းပါ။")
+                    return@launch
+                }
+            }
+
+            // ── 2. Coins ──
             state = state.copy(processStatus = "Coins စစ်ဆေးနေသည်...")
             val billingInfo = when (val user = repo.getUserInfo()) {
                 is Result.Success -> {
@@ -314,7 +323,7 @@ class EditorViewModel @Inject constructor(
                 }
             } else if (cost == -1) { state = state.copy(isProcessing = false, processStatus = "", error = "Video ရှည်လွန်း"); return@launch }
 
-            // ── 2. TTS ──
+            // ── 3. TTS ──
             var ttsAudioPath: String? = null
             if (state.aiText.isNotBlank()) {
                 ttsAudioPath = when {
@@ -339,18 +348,18 @@ class EditorViewModel @Inject constructor(
                 }
             }
 
-            // ── 3. SRT Subtitles ──
+            // ── 4. SRT Subtitles ──
             var srtPath: String? = null
             if (state.subtitleEnabled && state.aiText.isNotBlank() && ttsAudioPath != null) {
                 state = state.copy(processStatus = "Generating SRT...")
                 srtPath = generateSrtFromTts(context, state.aiText, ttsAudioPath)
             }
 
-            // ── 4. Logo ──
+            // ── 5. Logo ──
             var logoPath: String? = null
             state.logoUri?.let { uri -> val f = File(context.cacheDir, "logo_${System.currentTimeMillis()}.png"); if (uri.copyToFile(context, f) && f.exists()) logoPath = f.absolutePath }
 
-            // ── 5. Background music ──
+            // ── 6. Background music ──
             // Note: no pre-ducking here — FFmpegProcessor.buildCommand already applies
             // sidechaincompress (auto-duck) when bg music + TTS are both present. Mixing the
             // TTS into the music file first duplicated the voice track and ducked it twice.
@@ -361,7 +370,7 @@ class EditorViewModel @Inject constructor(
                 if (uri.copyToFile(context, f) && f.exists()) bgMusicPath = f.absolutePath
             }
 
-            // ── 6. Build options + start service ──
+            // ── 7. Build options + start service ──
             state = state.copy(processStatus = "Video processing...")
             val opts = FFmpegProcessor.ProcessOptions(
                 flip = state.flipEnabled, speed = state.speedEnabled, pitch = state.pitchEnabled, noise = state.noiseEnabled,
