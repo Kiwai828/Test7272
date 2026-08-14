@@ -66,9 +66,9 @@ object VoxCpmClient {
                 .build()
             val response = http.newCall(request).execute()
             val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) return@withContext Result.Error("VoxCPM request failed (${response.code})")
-            val eventId = JsonParser.parseString(body).asJsonObject.get("event_id")?.asString
-                ?: return@withContext Result.Error("VoxCPM did not return a job id")
+            if (!response.isSuccessful) return@withContext Result.Error("VoxCPM request failed (${response.code}): ${body.take(180)}")
+            val eventId = runCatching { JsonParser.parseString(body).asJsonObject.get("event_id")?.asString }.getOrNull()
+                ?: return@withContext Result.Error("VoxCPM did not return a job id: ${body.take(180)}")
             val output = awaitResult(eventId)
             val outputUrl = outputUrl(output)
                 ?: return@withContext Result.Error("VoxCPM returned no audio file")
@@ -136,7 +136,7 @@ object VoxCpmClient {
                 if (!line.startsWith("data:")) continue
                 val raw = line.removePrefix("data:").trim()
                 if (raw.isBlank() || raw == "null") continue
-                val data = JsonParser.parseString(raw)
+                val data = runCatching { JsonParser.parseString(raw) }.getOrElse { error("VoxCPM returned invalid event data") }
                 lastData = data
                 if (data.isJsonObject) {
                     val error = data.asJsonObject.get("error")?.takeIf { !it.isJsonNull }?.asString
@@ -169,13 +169,14 @@ object VoxCpmClient {
         val direct = obj.get("url")?.takeIf { !it.isJsonNull }?.asString
         if (!direct.isNullOrBlank()) return direct
         val path = obj.get("path")?.takeIf { !it.isJsonNull }?.asString ?: return null
-        return if (path.startsWith("http")) path else "$BASE_URL/file=$path"
+        return if (path.startsWith("http")) path else "$BASE_URL/gradio_api/file=$path"
     }
 
     private fun download(url: String, output: File) {
         val request = Request.Builder().url(url).get().build()
         val response = http.newCall(request).execute()
         if (!response.isSuccessful) error("VoxCPM audio download failed (${response.code})")
-        response.body?.byteStream()?.use { input -> output.outputStream().use { out -> input.copyTo(out) } }
+        val body = response.body ?: error("VoxCPM audio response was empty")
+        body.byteStream().use { input -> output.outputStream().use { out -> input.copyTo(out) } }
     }
 }

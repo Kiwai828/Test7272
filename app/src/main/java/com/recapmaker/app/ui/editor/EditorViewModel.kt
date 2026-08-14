@@ -29,6 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.text.Normalizer
 import java.util.UUID
 import javax.inject.Inject
 
@@ -281,6 +282,12 @@ class EditorViewModel @Inject constructor(
         val inputPath = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }
         viewModelScope.launch {
             state = state.copy(isProcessing = true, error = null, success = null)
+            val normalizedText = normalizeTtsText(state.aiText)
+            if (state.aiText.isNotBlank() && normalizedText.isBlank()) {
+                state = state.copy(isProcessing = false, processStatus = "", error = "အသံဖန်တီးရန် စာသားမရှိပါ။ စာသားကို ပြန်စစ်ပါ။")
+                return@launch
+            }
+            state = state.copy(aiText = normalizedText)
 
             // ── 1. Coins ──
             state = state.copy(processStatus = "Coins စစ်ဆေးနေသည်...")
@@ -326,7 +333,8 @@ class EditorViewModel @Inject constructor(
                         repo.refundCoins(cost, "$billingReason failed: TTS generation", if (coinTypeUsed == "gold") "gold" else "silver")
                         loadCoins()
                     }
-                    state = state.copy(isProcessing = false, processStatus = "", error = "အသံဖန်တီးမရပါ")
+                    val detail = state.error?.takeIf { it.isNotBlank() } ?: "အသံဖန်တီးမရပါ"
+                    state = state.copy(isProcessing = false, processStatus = "", error = detail)
                     return@launch
                 }
             }
@@ -483,23 +491,32 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    /** Split text into chunks at sentence boundaries */
+    private fun normalizeTtsText(raw: String): String {
+        val nfc = Normalizer.normalize(raw.replace('\u00A0', ' '), Normalizer.Form.NFC)
+        return nfc
+            .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]"), "")
+            .replace(Regex("[\\u200B-\\u200D\\u2060\\uFEFF]"), "")
+            .replace(Regex("[ \\t\\r\\n]+"), " ")
+            .trim()
+    }
+
+    /** Split normalized text into chunks without cutting Burmese words or punctuation. */
     private fun splitTextIntoChunks(text: String, maxLen: Int): List<String> {
-        if (text.length <= maxLen) return listOf(text)
+        val normalized = normalizeTtsText(text)
+        if (normalized.isBlank()) return emptyList()
+        if (normalized.length <= maxLen) return listOf(normalized)
         val chunks = mutableListOf<String>()
-        var remaining = text
+        var remaining = normalized
         while (remaining.isNotEmpty()) {
-            if (remaining.length <= maxLen) { chunks.add(remaining); break }
-            // Find split point at sentence boundary
-            var splitAt = remaining.lastIndexOf("။", maxLen).takeIf { it > 0 } // Myanmar period
-                ?: remaining.lastIndexOf(".", maxLen).takeIf { it > 0 }
-                ?: remaining.lastIndexOf(" ", maxLen).takeIf { it > 0 }
-                ?: maxLen
-            splitAt++ // include the delimiter
-            chunks.add(remaining.substring(0, splitAt).trim())
-            remaining = remaining.substring(splitAt).trim()
+            if (remaining.length <= maxLen) { chunks += remaining.trim(); break }
+            val window = remaining.substring(0, maxLen)
+            val boundary = maxOf(window.lastIndexOf('။'), window.lastIndexOf('.'), window.lastIndexOf(' '))
+            val cut = if (boundary >= maxLen / 3) boundary + 1 else maxLen
+            val part = remaining.substring(0, cut).trim()
+            if (part.isNotBlank()) chunks += part
+            remaining = remaining.substring(cut).trim()
         }
-        return chunks.filter { it.isNotBlank() }
+        return chunks
     }
 
     /** Concatenate multiple audio files using FFmpeg concat */
@@ -528,12 +545,18 @@ class EditorViewModel @Inject constructor(
     private fun cleanup(vararg paths: String?) { paths.filterNotNull().forEach { try { File(it).delete() } catch (_: Exception) {} } }
 
     private suspend fun generateVoxCpmAudio(context: Context): String? {
+        val normalizedText = normalizeTtsText(state.aiText)
+        if (normalizedText.isBlank()) {
+            state = state.copy(error = "VoxCPM သို့ပို့ရန် စာသားမရှိပါ")
+            return null
+        }
+        state = state.copy(aiText = normalizedText)
         val reference = state.voxcpmReferencePath?.let { File(it) }
         if (reference != null && (!reference.exists() || reference.length() == 0L)) {
             state = state.copy(error = "VoxCPM voice sample မတွေ့ပါ")
             return null
         }
-        val chunks = splitTextIntoChunks(state.aiText, 650)
+        val chunks = splitTextIntoChunks(normalizedText, 650)
         val generated = mutableListOf<String>()
         try {
             chunks.forEachIndexed { index, chunk ->
