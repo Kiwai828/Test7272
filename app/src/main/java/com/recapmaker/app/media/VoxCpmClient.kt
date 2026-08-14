@@ -115,6 +115,8 @@ object VoxCpmClient {
             addProperty("orig_name", file.name)
             addProperty("size", file.length())
             addProperty("mime_type", mime.toString())
+            addProperty("is_stream", false)
+            addProperty("url", "$BASE_URL/gradio_api/file=$path")
             add("meta", JsonObject().apply { addProperty("_type", "gradio.FileData") })
         }
     }
@@ -136,10 +138,16 @@ object VoxCpmClient {
                 if (raw.isBlank() || raw == "null") continue
                 val data = JsonParser.parseString(raw)
                 lastData = data
+                if (data.isJsonObject) {
+                    val error = data.asJsonObject.get("error")?.takeIf { !it.isJsonNull }?.asString
+                    if (!error.isNullOrBlank()) error("VoxCPM generation error: $error")
+                }
                 if (data.isJsonArray && data.asJsonArray.size() > 0) {
                     val first = data.asJsonArray[0]
-                    if (first.isJsonObject && (first.asJsonObject.has("path") || first.asJsonObject.has("url"))) {
-                        return data
+                    if (first.isJsonObject && (first.asJsonObject.has("path") || first.asJsonObject.has("url"))) return data
+                    if (first.isJsonArray && first.asJsonArray.size() > 0 && first.asJsonArray[0].isJsonObject) {
+                        val nested = first.asJsonArray[0].asJsonObject
+                        if (nested.has("path") || nested.has("url")) return first
                     }
                 }
             }
@@ -149,7 +157,10 @@ object VoxCpmClient {
 
     private fun outputUrl(result: JsonElement): String? {
         val fileData = when {
-            result.isJsonArray && result.asJsonArray.size() > 0 -> result.asJsonArray[0]
+            result.isJsonArray && result.asJsonArray.size() > 0 -> {
+                val first = result.asJsonArray[0]
+                if (first.isJsonArray && first.asJsonArray.size() > 0) first.asJsonArray[0] else first
+            }
             result.isJsonObject -> result
             else -> null
         } ?: return null

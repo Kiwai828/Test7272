@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -28,9 +29,17 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
     var showPackages by remember { mutableStateOf(false) }
     var showCheckin by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().background(DarkBg).verticalScroll(rememberScrollState())) {
-        Box(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
-            AnimatedGradientBackground(modifier = Modifier.matchParentSize(), enabled = true)
+    Column(
+        Modifier.fillMaxSize()
+            .background(DarkBg)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth()
+                .background(Brush.sweepGradient(listOf(Purple.copy(.15f), Emerald.copy(.1f), PurpleDark.copy(.12f), Color.Transparent))),
+        ) {
             Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                 // ── Top bar ──
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -46,12 +55,14 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
                 // ── Coin cards (tappable) ──
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PulseGlow(Gold, visible = true, modifier = Modifier.Companion.weight(1f)) {
-                        CoinCard("🥇 Gold", s.gold, Gold, Modifier.Companion.weight(1f)) { showPackages = true }
+                        CoinCard("🥇 Gold", s.gold, Gold, Modifier.fillMaxWidth()) { showPackages = true }
                     }
                     PulseGlow(SilverColor, visible = true, modifier = Modifier.Companion.weight(1f)) {
-                        CoinCard("🥈 Silver", s.silver, SilverColor, Modifier.Companion.weight(1f)) { showCheckin = true }
+                        CoinCard("🥈 Silver", s.silver, SilverColor, Modifier.fillMaxWidth()) { showCheckin = true }
                     }
                 }
+            }
+        }
 
         Spacer(Modifier.height(12.dp))
 
@@ -76,7 +87,6 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
                 }
             }
         }
-    }
 
         Spacer(Modifier.height(20.dp))
 
@@ -86,10 +96,12 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
 
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             PulseGlow(Purple, visible = true, modifier = Modifier.Companion.weight(1f)) {
-                ActionCard("Video Editor", "Flip, blur, TTS, watermark", Icons.Default.VideoSettings, Purple, Modifier.Companion.weight(1f)) { onEditor() }
+                                    ActionCard("Video Editor", "Flip, blur, TTS, watermark", Icons.Default.VideoSettings, Purple, Modifier.fillMaxWidth()) { onEditor() }
+
             }
             PulseGlow(Emerald, visible = true, modifier = Modifier.Companion.weight(1f)) {
-                ActionCard("Subtitles", "Auto-generate & burn", Icons.Default.Subtitles, Emerald, Modifier.Companion.weight(1f)) { onSubtitle() }
+                                    ActionCard("Subtitles", "Auto-generate & burn", Icons.Default.Subtitles, Emerald, Modifier.fillMaxWidth()) { onSubtitle() }
+
             }
         }
 
@@ -140,7 +152,6 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
     if (showCheckin) {
         CheckinDialog(s.checkedInToday, s.checkinSilver, s.isLoading, { vm.dailyCheckin() }) { showCheckin = false }
     }
-}
 }
 
 // ── Coin Card ──

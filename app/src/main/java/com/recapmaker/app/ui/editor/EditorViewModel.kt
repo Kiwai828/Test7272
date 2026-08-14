@@ -529,20 +529,39 @@ class EditorViewModel @Inject constructor(
 
     private suspend fun generateVoxCpmAudio(context: Context): String? {
         val reference = state.voxcpmReferencePath?.let { File(it) }
-        return when (val result = VoxCpmClient.generate(
-            context = context,
-            text = state.aiText,
-            referenceAudio = reference,
-            controlInstruction = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
-            cfgValue = 2.0f,
-            normalize = true,
-            denoise = reference != null,
-        )) {
-            is Result.Success -> result.data.absolutePath
-            is Result.Error -> {
-                state = state.copy(error = "VoxCPM: ${result.message}")
-                null
+        if (reference != null && (!reference.exists() || reference.length() == 0L)) {
+            state = state.copy(error = "VoxCPM voice sample မတွေ့ပါ")
+            return null
+        }
+        val chunks = splitTextIntoChunks(state.aiText, 650)
+        val generated = mutableListOf<String>()
+        try {
+            chunks.forEachIndexed { index, chunk ->
+                state = state.copy(processStatus = "VoxCPM generating ${index + 1}/${chunks.size}...")
+                when (val result = VoxCpmClient.generate(
+                    context = context,
+                    text = chunk,
+                    referenceAudio = reference,
+                    controlInstruction = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
+                    cfgValue = 2.0f,
+                    normalize = true,
+                    denoise = reference != null,
+                )) {
+                    is Result.Success -> generated += result.data.absolutePath
+                    is Result.Error -> {
+                        state = state.copy(error = "VoxCPM: ${result.message}")
+                        return null
+                    }
+                }
             }
+            val combined = concatenateAudioFiles(context, generated)
+            if (combined == null) state = state.copy(error = "VoxCPM audio ပေါင်းစည်းမရပါ")
+            generated.filter { it != combined }.forEach { File(it).delete() }
+            combined
+        } catch (e: Exception) {
+            generated.forEach { File(it).delete() }
+            state = state.copy(error = "VoxCPM: ${e.message ?: "generation failed"}")
+            null
         }
     }
 
