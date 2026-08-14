@@ -39,6 +39,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onLogoSelected(it) } }
     val extraClipPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { uri -> vm.addExtraClip(uri, ctx) } }
+    val voxcpmReferencePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { uri -> vm.onVoxCpmReferenceSelected(uri, ctx) } }
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -133,9 +134,32 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     VoiceTabRow(listOf("google" to "🔷 Google PREMIUM", "microsoft" to "🟢 Microsoft FREE"), s.voiceTab) { vm.switchVoiceTab(it) }
                     if (s.edgeTtsAvailable) {
                         Spacer(Modifier.height(6.dp))
-                        EffectToggle("Microsoft FREE — Edge TTS (on-device)", Icons.Default.OfflineBolt, s.useEdgeTts, Cyan) { vm.setUseEdgeTts(it) }
+                        EffectToggle("Microsoft FREE — Edge TTS", Icons.Default.OfflineBolt, s.useEdgeTts, Cyan) { vm.setUseEdgeTts(it) }
                     }
                     Spacer(Modifier.height(6.dp))
+                    EffectToggle("VoxCPM TTS / Voice Clone (online)", Icons.Default.RecordVoiceOver, s.useVoxCpm, Rose) { vm.setUseVoxCpm(it) }
+                    AnimatedVisibility(s.useVoxCpm) {
+                        Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("စာသားကို VoxCPM သို့ပို့ပြီး အသံဖန်တီးမည်။ Voice clone အတွက် sample သည် 50 seconds အောက်ဖြစ်ရမည်။", color = TextDim, fontSize = 10.sp)
+                            OutlinedButton(
+                                onClick = { voxcpmReferencePicker.launch("audio/*") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, if (s.voxcpmReferencePath != null) Emerald.copy(.35f) else Rose.copy(.3f)),
+                            ) {
+                                Icon(if (s.voxcpmReferencePath != null) Icons.Default.CheckCircle else Icons.Default.AudioFile, null, tint = if (s.voxcpmReferencePath != null) Emerald else Rose, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(s.voxcpmReferenceName ?: "Voice sample ထည့်ရန် (optional)", color = if (s.voxcpmReferencePath != null) Emerald else TextPrimary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (s.voxcpmReferencePath != null) {
+                                TextButton(onClick = { vm.removeVoxCpmReference(ctx) }) {
+                                    Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Voice sample ဖယ်ရှားရန်", color = ErrorRed, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
                     OutlinedTextField(s.voiceSearch, { vm.setVoiceSearch(it) }, Modifier.fillMaxWidth(), placeholder = { Text("Search...", fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp), tint = TextDim) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple.copy(.3f), unfocusedBorderColor = Purple.copy(.09f), cursorColor = Purple), shape = RoundedCornerShape(11.dp))
                     Spacer(Modifier.height(6.dp))
                     val voices = vm.filteredVoices

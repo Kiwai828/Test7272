@@ -19,14 +19,17 @@ import com.recapmaker.app.data.repository.Result
 import com.recapmaker.app.media.FFmpegProcessor
 import com.recapmaker.app.media.VideoDownloader
 import com.recapmaker.app.media.VideoProcessService
+import com.recapmaker.app.media.VoxCpmClient
 import com.arthenica.ffmpegkit.ReturnCode
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
 import javax.inject.Inject
 
 data class EditorState(
@@ -51,6 +54,7 @@ data class EditorState(
     val extraClips: List<String> = emptyList(),
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
+    val useVoxCpm: Boolean = false, val voxcpmReferencePath: String? = null, val voxcpmReferenceName: String? = null,
 )
 
 
@@ -58,9 +62,19 @@ data class EditorState(
 class EditorViewModel @Inject constructor(
     private val repo: MainRepository,
     private val historyDao: VideoHistoryDao,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
-    init { loadCoins(); loadHistory(); checkEdgeTts() }
+    init {
+        loadCoins(); loadHistory(); checkEdgeTts()
+        val prefs = appContext.getSharedPreferences("voxcpm", Context.MODE_PRIVATE)
+        val reference = prefs.getString("reference_path", null)?.takeIf { File(it).exists() }
+        state = state.copy(
+            useVoxCpm = prefs.getBoolean("enabled", false),
+            voxcpmReferencePath = reference,
+            voxcpmReferenceName = prefs.getString("reference_name", null),
+        )
+    }
 
     private fun checkEdgeTts() { viewModelScope.launch { when (val r = repo.getEdgeTtsConfig()) { is Result.Success -> state = state.copy(edgeTtsAvailable = true); is Result.Error -> state = state.copy(edgeTtsAvailable = false) } } }
 
@@ -146,9 +160,61 @@ class EditorViewModel @Inject constructor(
         if (!v) { state = state.copy(useEdgeTts = false); return }
         // Edge TTS (Azure) only supports the Microsoft Neural voices — switch off Google voices
         val voice = if (VoiceData.isGeminiVoice(state.selectedVoice)) "ThihaNeural" else state.selectedVoice
-        state = state.copy(useEdgeTts = true, selectedVoice = voice, voiceTab = "microsoft")
+        state = state.copy(useEdgeTts = true, useVoxCpm = false, selectedVoice = voice, voiceTab = "microsoft")
     }
     fun setEdgeTtsAvailable(v: Boolean) { state = state.copy(edgeTtsAvailable = v) }
+
+    fun setUseVoxCpm(v: Boolean) {
+        state = state.copy(useVoxCpm = v, useEdgeTts = if (v) false else state.useEdgeTts)
+        appContext.getSharedPreferences("voxcpm", Context.MODE_PRIVATE)
+            .edit().putBoolean("enabled", v).apply()
+    }
+
+    fun onVoxCpmReferenceSelected(uri: Uri, context: Context) {
+        viewModelScope.launch {
+            val dir = File(context.filesDir, "voxcpm").apply { mkdirs() }
+            val displayName = runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) cursor.getString(index) else null
+                }
+            }.getOrNull() ?: uri.lastPathSegment ?: "voice_sample.wav"
+            val extension = displayName.substringAfterLast('.', "wav").lowercase()
+                .takeIf { it in setOf("wav", "mp3", "m4a", "ogg", "aac", "flac") } ?: "wav"
+            val target = File(dir, "reference_${System.currentTimeMillis()}.$extension")
+            if (!uri.copyToFile(context, target) || !target.exists() || target.length() == 0L) {
+                target.delete()
+                state = state.copy(error = "Voice sample ဖတ်မရပါ")
+                return@launch
+            }
+            val durationSec = runCatching {
+                MediaMetadataRetriever().let { retriever ->
+                    retriever.setDataSource(target.absolutePath)
+                    val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    retriever.release()
+                    duration / 1000L
+                }
+            }.getOrDefault(0L)
+            if (durationSec > 50L) {
+                target.delete()
+                state = state.copy(error = "VoxCPM voice sample သည် 50 seconds ထက် မကျော်ရပါ")
+                return@launch
+            }
+            state.voxcpmReferencePath?.let { old -> runCatching { File(old).delete() } }
+            state = state.copy(voxcpmReferencePath = target.absolutePath, voxcpmReferenceName = displayName, error = null)
+            context.getSharedPreferences("voxcpm", Context.MODE_PRIVATE).edit()
+                .putString("reference_path", target.absolutePath)
+                .putString("reference_name", displayName)
+                .apply()
+        }
+    }
+
+    fun removeVoxCpmReference(context: Context) {
+        state.voxcpmReferencePath?.let { runCatching { File(it).delete() } }
+        state = state.copy(voxcpmReferencePath = null, voxcpmReferenceName = null)
+        context.getSharedPreferences("voxcpm", Context.MODE_PRIVATE).edit()
+            .remove("reference_path").remove("reference_name").apply()
+    }
 
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }
@@ -173,12 +239,24 @@ class EditorViewModel @Inject constructor(
 
             // ── 1. Coins ──
             state = state.copy(processStatus = "Coins စစ်ဆေးနေသည်...")
-            val cost = getCostForDuration(state.videoDuration, state.pricingTiers)
+            val billingInfo = when (val user = repo.getUserInfo()) {
+                is Result.Success -> {
+                    val freshTiers = user.data.pricing_tiers ?: emptyList()
+                    state = state.copy(gold = user.data.gold, silver = user.data.silver, pricingTiers = freshTiers)
+                    freshTiers
+                }
+                is Result.Error -> {
+                    state = state.copy(isProcessing = false, processStatus = "", error = "Coins: ${user.message}")
+                    return@launch
+                }
+            }
+            val cost = getCostForDuration(state.videoDuration, billingInfo)
+            val billingReason = "Video ${state.videoDuration}s job=${UUID.randomUUID()}"
             var coinTypeUsed = "auto"
             if (cost > 0) {
                 val isGemini = state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)
                 coinTypeUsed = if (isGemini) "gold" else "auto"
-                when (val r = repo.deductCoins(cost, "Video ${state.videoDuration}s", coinTypeUsed)) {
+                when (val r = repo.deductCoins(cost, billingReason, coinTypeUsed)) {
                     is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver)
                     is Result.Error -> { state = state.copy(isProcessing = false, processStatus = "", error = "Coins: ${r.message}"); return@launch }
                 }
@@ -187,15 +265,20 @@ class EditorViewModel @Inject constructor(
             // ── 2. TTS ──
             var ttsAudioPath: String? = null
             if (state.aiText.isNotBlank()) {
-                ttsAudioPath = if (state.useEdgeTts && state.edgeTtsAvailable) {
-                    state = state.copy(processStatus = "Edge TTS generating...")
-                    generateEdgeTtsAudio(context, state.aiText, state.selectedVoice)
-                } else {
-                    generateFullTtsAudio(context, state.aiText, state.selectedVoice, state.videoDuration)
+                ttsAudioPath = when {
+                    state.useVoxCpm -> {
+                        state = state.copy(processStatus = "VoxCPM voice generating...")
+                        generateVoxCpmAudio(context)
+                    }
+                    state.useEdgeTts && state.edgeTtsAvailable -> {
+                        state = state.copy(processStatus = "Edge TTS generating...")
+                        generateEdgeTtsAudio(context, state.aiText, state.selectedVoice)
+                    }
+                    else -> generateFullTtsAudio(context, state.aiText, state.selectedVoice, state.videoDuration)
                 }
                 if (ttsAudioPath == null) {
                     if (cost > 0) {
-                        repo.refundCoins(cost, "TTS generation failed", if (coinTypeUsed == "gold") "gold" else "silver")
+                        repo.refundCoins(cost, "$billingReason failed: TTS generation", if (coinTypeUsed == "gold") "gold" else "silver")
                         loadCoins()
                     }
                     state = state.copy(isProcessing = false, processStatus = "", error = "အသံဖန်တီးမရပါ")
@@ -252,7 +335,7 @@ class EditorViewModel @Inject constructor(
                 Log.e("Editor", "Service start fail: ${e.message}, fallback direct")
                 state = state.copy(processStatus = "Direct processing...")
                 val result = FFmpegProcessor.process(inputPath, context, opts)
-                finishProcess(result, cost, coinTypeUsed)
+                finishProcess(result, cost, coinTypeUsed, billingReason)
                 cleanup(ttsAudioPath, logoPath, bgMusicPath, srtPath); return@launch
             }
 
@@ -268,7 +351,7 @@ class EditorViewModel @Inject constructor(
                 historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = VideoProcessService.resultOutputPath ?: "", status = "completed", duration = state.videoDuration))
                 state = state.copy(isProcessing = false, processStatus = "", success = VideoProcessService.resultMessage); loadCoins()
             } else {
-                if (cost > 0) { repo.refundCoins(cost, "Failed", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
+                if (cost > 0) { repo.refundCoins(cost, "$billingReason failed", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
                 historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
                 state = state.copy(isProcessing = false, processStatus = "", error = VideoProcessService.resultMessage ?: "Failed")
             }
@@ -313,8 +396,9 @@ class EditorViewModel @Inject constructor(
         } else {
             state = state.copy(processStatus = "TTS audio ပေါင်းနေသည်...")
             fullAudioPath = concatenateAudioFiles(context, chunkFiles) ?: run {
+                chunkFiles.forEach { File(it).delete() }
                 state = state.copy(processStatus = "⚠ Audio concat fail")
-                delay(1000); return chunkFiles[0] // fallback: use first chunk
+                return null
             }
             // Cleanup chunk files
             chunkFiles.forEach { File(it).delete() }
@@ -385,18 +469,37 @@ class EditorViewModel @Inject constructor(
         return if (ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0) out.absolutePath else { out.delete(); null }
     }
 
-    private suspend fun finishProcess(result: FFmpegProcessor.ProcessResult, cost: Int, coinType: String) {
+    private suspend fun finishProcess(result: FFmpegProcessor.ProcessResult, cost: Int, coinType: String, billingReason: String) {
         if (result.success && result.outputPath != null) {
             historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = result.outputPath, status = "completed", duration = state.videoDuration))
             state = state.copy(isProcessing = false, processStatus = "", success = "✅ ပြီးပါပြီ! (${result.durationMs / 1000}s)"); loadCoins()
         } else {
-            if (cost > 0) { repo.refundCoins(cost, "Failed", if (coinType == "gold") "gold" else "silver"); loadCoins() }
+            if (cost > 0) { repo.refundCoins(cost, "$billingReason failed", if (coinType == "gold") "gold" else "silver"); loadCoins() }
             historyDao.insert(VideoHistoryEntity(fileName = state.videoFilename ?: "video.mp4", filePath = "", status = "failed", duration = state.videoDuration))
             state = state.copy(isProcessing = false, processStatus = "", error = result.error ?: "Failed")
         }; loadHistory()
     }
 
     private fun cleanup(vararg paths: String?) { paths.filterNotNull().forEach { try { File(it).delete() } catch (_: Exception) {} } }
+
+    private suspend fun generateVoxCpmAudio(context: Context): String? {
+        val reference = state.voxcpmReferencePath?.let { File(it) }
+        return when (val result = VoxCpmClient.generate(
+            context = context,
+            text = state.aiText,
+            referenceAudio = reference,
+            controlInstruction = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
+            cfgValue = 2.0f,
+            normalize = true,
+            denoise = reference != null,
+        )) {
+            is Result.Success -> result.data.absolutePath
+            is Result.Error -> {
+                state = state.copy(error = "VoxCPM: ${result.message}")
+                null
+            }
+        }
+    }
 
     private suspend fun generateEdgeTtsAudio(context: Context, text: String, voice: String): String? {
         val cfg = repo.getEdgeTtsConfig()
