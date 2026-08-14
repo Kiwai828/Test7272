@@ -557,11 +557,11 @@ class EditorViewModel @Inject constructor(
             val combined = concatenateAudioFiles(context, generated)
             if (combined == null) state = state.copy(error = "VoxCPM audio ပေါင်းစည်းမရပါ")
             generated.filter { it != combined }.forEach { File(it).delete() }
-            combined
+            return combined
         } catch (e: Exception) {
             generated.forEach { File(it).delete() }
             state = state.copy(error = "VoxCPM: ${e.message ?: "generation failed"}")
-            null
+            return null
         }
     }
 
