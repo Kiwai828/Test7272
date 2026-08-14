@@ -1,9 +1,9 @@
 package com.recapmaker.app.media
 
 import android.content.Context
-import com.google.gson.Gson
-import com.google.gson.JsonArray
-import com.google.gson.JsonElement
+import android.util.Base64
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.recapmaker.app.data.repository.Result
@@ -11,32 +11,53 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-/** Direct client for the public VoxCPM Gradio Space. */
+/**
+ * Authenticated client for the project's Cloudflare VoxCPM2 relay.
+ *
+ * The Modal/GPU service is intentionally never called from the app. The app
+ * only sends text and a WAV reference sample to the Cloudflare API.
+ */
 object VoxCpmClient {
-    private const val BASE_URL = "https://openbmb-voxcpm-demo.hf.space"
-    private const val GENERATE_ENDPOINT = "/gradio_api/call/generate"
+    private const val BASE_URL = "https://voice.shinemovierecap.online"
+    private const val GENERATE_ENDPOINT = "/api/v1/tts/generate"
     private const val MAX_ATTEMPTS = 3
-    private val gson = Gson()
+    private const val MAX_ERROR_BODY = 320
+    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(360, TimeUnit.SECONDS)
+        .writeTimeout(90, TimeUnit.SECONDS)
+        .readTimeout(960, TimeUnit.SECONDS)
+        .callTimeout(1000, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
-    suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
+    fun isConfigured(accessToken: String?): Boolean = !accessToken.isNullOrBlank()
+
+    /**
+     * Authenticated, non-generating preflight. An empty body is rejected by the
+     * API with 422 after authentication, which is a safe way to verify the
+     * bearer token without invoking Modal inference or charging provider credits.
+     */
+    suspend fun isAvailable(accessToken: String?): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured(accessToken)) return@withContext false
         runCatching {
-            val request = Request.Builder().url("$BASE_URL/gradio_api/info").get().build()
+            val request = Request.Builder()
+                .url(BASE_URL + GENERATE_ENDPOINT)
+                .header("Authorization", "Bearer ${accessToken!!.trim()}")
+                .header("Accept", "application/json")
+                .header("Idempotency-Key", "preflight-${UUID.randomUUID()}")
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
             http.newCall(request).execute().use { response ->
-                response.isSuccessful && response.body?.string()?.contains("/generate") == true
+                response.code == 422 || response.isSuccessful
             }
         }.getOrDefault(false)
     }
@@ -44,187 +65,148 @@ object VoxCpmClient {
     suspend fun generate(
         context: Context,
         text: String,
-        referenceAudio: File? = null,
-        controlInstruction: String = "",
-        promptText: String = "",
-        usePromptText: Boolean = false,
+        referenceAudio: File,
+        accessToken: String?,
+        styleControl: String = "Natural pace, clear pronunciation",
         cfgValue: Float = 2.0f,
-        normalize: Boolean = true,
-        denoise: Boolean = true,
+        inferenceTimesteps: Int = 10,
+        seed: Int? = null,
+        idempotencyKey: String = UUID.randomUUID().toString(),
     ): Result<File> = withContext(Dispatchers.IO) {
-        if (text.isBlank()) return@withContext Result.Error("VoxCPM text is empty")
-        var lastError = "unknown service error"
-        repeat(MAX_ATTEMPTS) { index ->
-            try {
-                val file = generateOnce(
-                    context = context,
-                    text = text,
-                    referenceAudio = referenceAudio,
-                    controlInstruction = controlInstruction,
-                    promptText = promptText,
-                    usePromptText = usePromptText,
-                    cfgValue = cfgValue,
-                    normalize = normalize,
-                    denoise = denoise,
-                )
-                return@withContext Result.Success(file)
-            } catch (e: Exception) {
-                lastError = e.message ?: e.javaClass.simpleName
-                if (index + 1 < MAX_ATTEMPTS) delay(1500L * (index + 1))
-            }
+        if (text.isBlank()) return@withContext Result.Error("VoxCPM2 သို့ပို့ရန် စာသားမရှိပါ")
+        if (!isConfigured(accessToken)) {
+            return@withContext Result.Error("VoxCPM2 access token မတွေ့ပါ။ App account ဖြင့် ပြန်ဝင်ပြီး စမ်းပါ")
         }
-        Result.Error("VoxCPM မရနိုင်သေးပါ။ ${MAX_ATTEMPTS} ကြိမ် ပြန်ကြိုးစားပြီးနောက်: $lastError")
+        if (!referenceAudio.exists() || referenceAudio.length() == 0L) {
+            return@withContext Result.Error("VoxCPM2 voice sample မတွေ့ပါ")
+        }
+
+        var wavReference: File? = null
+        try {
+            wavReference = prepareWavReference(context, referenceAudio)
+            val referenceBase64 = Base64.encodeToString(wavReference.readBytes(), Base64.NO_WRAP)
+            var lastError = "မသိရသေးသော service error"
+
+            repeat(MAX_ATTEMPTS) { attempt ->
+                try {
+                    val audio = generateOnce(
+                        context = context,
+                        text = text,
+                        referenceAudioBase64 = referenceBase64,
+                        accessToken = accessToken!!,
+                        styleControl = styleControl,
+                        cfgValue = cfgValue,
+                        inferenceTimesteps = inferenceTimesteps,
+                        seed = seed,
+                        idempotencyKey = idempotencyKey,
+                    )
+                    return@withContext Result.Success(audio)
+                } catch (e: ApiException) {
+                    lastError = e.message ?: "HTTP ${e.code}"
+                    if (!e.retryable || attempt + 1 >= MAX_ATTEMPTS) return@withContext Result.Error(lastError)
+                    delay(1500L * (attempt + 1))
+                } catch (e: IOException) {
+                    lastError = e.message ?: "Network error"
+                    if (attempt + 1 < MAX_ATTEMPTS) delay(1500L * (attempt + 1))
+                } catch (e: Exception) {
+                    lastError = e.message ?: e.javaClass.simpleName
+                    return@withContext Result.Error("VoxCPM2: $lastError")
+                }
+            }
+            Result.Error("VoxCPM2 မရနိုင်သေးပါ။ ${MAX_ATTEMPTS} ကြိမ် ပြန်ကြိုးစားပြီးနောက်: $lastError")
+        } catch (e: Exception) {
+            Result.Error("VoxCPM2 reference audio ပြင်ဆင်မရပါ: ${e.message ?: "unknown error"}")
+        } finally {
+            wavReference?.delete()
+        }
     }
 
     private fun generateOnce(
         context: Context,
         text: String,
-        referenceAudio: File?,
-        controlInstruction: String,
-        promptText: String,
-        usePromptText: Boolean,
+        referenceAudioBase64: String,
+        accessToken: String,
+        styleControl: String,
         cfgValue: Float,
-        normalize: Boolean,
-        denoise: Boolean,
+        inferenceTimesteps: Int,
+        seed: Int?,
+        idempotencyKey: String,
     ): File {
-        val referenceData = referenceAudio?.let { uploadReference(it) }
-        val data = JsonArray().apply {
-            add(text)
-            add(controlInstruction)
-            if (referenceData == null) add(com.google.gson.JsonNull.INSTANCE) else add(referenceData)
-            add(usePromptText)
-            add(promptText)
-            add(cfgValue.coerceIn(1.0f, 3.0f))
-            add(normalize)
-            add(denoise)
+        val payload = JsonObject().apply {
+            addProperty("text", text)
+            addProperty("voice_mode", "clone")
+            addProperty("reference_audio_base64", referenceAudioBase64)
+            addProperty("style_control", styleControl)
+            addProperty("cfg_value", cfgValue.coerceIn(1.0f, 3.0f))
+            addProperty("inference_timesteps", inferenceTimesteps.coerceIn(1, 50))
+            seed?.let { addProperty("seed", it) }
         }
-        val payload = JsonObject().apply { add("data", data) }
         val request = Request.Builder()
             .url(BASE_URL + GENERATE_ENDPOINT)
+            .header("Authorization", "Bearer $accessToken")
             .header("Accept", "application/json")
-            .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
+            .header("Idempotency-Key", idempotencyKey)
+            .post(com.google.gson.Gson().toJson(payload).toRequestBody(jsonMediaType))
             .build()
-        val eventId = http.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("request failed (${response.code}): ${body.take(220)}")
-            runCatching { JsonParser.parseString(body).asJsonObject.get("event_id")?.asString }.getOrNull()
-                ?: error("no job id returned: ${body.take(220)}")
-        }
-        val result = awaitResult(eventId)
-        val outputUrl = outputUrl(result) ?: error("job completed without an audio file")
-        val outputFile = File.createTempFile("voxcpm_", ".mp3", context.cacheDir)
-        download(outputUrl, outputFile)
-        if (!outputFile.exists() || outputFile.length() == 0L) {
-            outputFile.delete()
-            error("audio response was empty")
-        }
-        return outputFile
-    }
 
-    private fun uploadReference(file: File): JsonObject {
-        require(file.exists() && file.length() > 0L) { "reference audio is empty" }
-        val mime = when (file.extension.lowercase()) {
-            "wav" -> "audio/wav"
-            "m4a" -> "audio/mp4"
-            "ogg" -> "audio/ogg"
-            "aac" -> "audio/aac"
-            "flac" -> "audio/flac"
-            else -> "audio/mpeg"
-        }.toMediaType()
-        val multipart = MultipartBody.Part.createFormData("files", file.name, file.asRequestBody(mime))
-        val request = Request.Builder()
-            .url("$BASE_URL/gradio_api/upload")
-            .post(MultipartBody.Builder().setType(MultipartBody.FORM).addPart(multipart).build())
-            .build()
-        return http.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("reference upload failed (${response.code}): ${body.take(180)}")
-            val parsed = JsonParser.parseString(body)
-            val first = if (parsed.isJsonArray && parsed.asJsonArray.size() > 0) parsed.asJsonArray[0] else parsed
-            val path = when {
-                first.isJsonPrimitive -> first.asString
-                first.isJsonObject -> first.asJsonObject.get("path")?.asString
-                    ?: first.asJsonObject.get("url")?.asString
-                else -> null
-            } ?: error("reference upload returned no path")
-            JsonObject().apply {
-                addProperty("path", path)
-                addProperty("orig_name", file.name)
-                addProperty("size", file.length())
-                addProperty("mime_type", mime.toString())
-                addProperty("is_stream", false)
-                addProperty("url", "$BASE_URL/gradio_api/file=$path")
-                add("meta", JsonObject().apply { addProperty("_type", "gradio.FileData") })
-            }
-        }
-    }
-
-    private fun awaitResult(eventId: String): JsonElement {
-        val request = Request.Builder()
-            .url("$BASE_URL$GENERATE_ENDPOINT/$eventId")
-            .header("Accept", "text/event-stream")
-            .get()
-            .build()
-        val response = http.newCall(request).execute()
-        if (!response.isSuccessful) {
-            response.close()
-            error("result stream failed (${response.code})")
-        }
-        var lastData: JsonElement? = null
-        response.use { safeResponse ->
-            safeResponse.body?.source()?.buffer()?.use { source ->
-                while (!source.exhausted()) {
-                    val line = source.readUtf8Line() ?: break
-                    if (!line.startsWith("data:")) continue
-                    val raw = line.removePrefix("data:").trim()
-                    if (raw.isBlank() || raw == "null") continue
-                    val data = runCatching { JsonParser.parseString(raw) }
-                        .getOrElse { error("invalid event data from VoxCPM") }
-                    lastData = data
-                    if (data.isJsonPrimitive && data.asJsonPrimitive.isString) {
-                        error("VoxCPM job error: ${data.asString.take(240)}")
-                    }
-                    if (data.isJsonObject) {
-                        val message = data.asJsonObject.get("error")?.takeIf { !it.isJsonNull }?.asString
-                        if (!message.isNullOrBlank()) error("VoxCPM job error: ${message.take(240)}")
-                    }
-                    if (data.isJsonArray && data.asJsonArray.size() > 0) {
-                        val first = data.asJsonArray[0]
-                        if (first.isJsonObject && (first.asJsonObject.has("path") || first.asJsonObject.has("url"))) return data
-                        if (first.isJsonArray && first.asJsonArray.size() > 0 && first.asJsonArray[0].isJsonObject) {
-                            val nested = first.asJsonArray[0].asJsonObject
-                            if (nested.has("path") || nested.has("url")) return first
-                        }
-                    }
-                }
-            }
-        }
-        error("VoxCPM stream ended without audio: ${lastData?.toString()?.take(220) ?: "no event data"}")
-    }
-
-    private fun outputUrl(result: JsonElement): String? {
-        val fileData = when {
-            result.isJsonArray && result.asJsonArray.size() > 0 -> {
-                val first = result.asJsonArray[0]
-                if (first.isJsonArray && first.asJsonArray.size() > 0) first.asJsonArray[0] else first
-            }
-            result.isJsonObject -> result
-            else -> null
-        } ?: return null
-        if (!fileData.isJsonObject) return null
-        val obj = fileData.asJsonObject
-        val direct = obj.get("url")?.takeIf { !it.isJsonNull }?.asString
-        if (!direct.isNullOrBlank()) return direct
-        val path = obj.get("path")?.takeIf { !it.isJsonNull }?.asString ?: return null
-        return if (path.startsWith("http")) path else "$BASE_URL/gradio_api/file=$path"
-    }
-
-    private fun download(url: String, output: File) {
-        val request = Request.Builder().url(url).get().build()
         http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("audio download failed (${response.code})")
-            val body = response.body ?: error("audio response was empty")
-            body.byteStream().use { input -> output.outputStream().use { out -> input.copyTo(out) } }
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw ApiException(response.code, parseError(response.code, body), isRetryable(response.code))
+            }
+            val root = runCatching { JsonParser.parseString(body).asJsonObject }
+                .getOrElse { error("VoxCPM2 response JSON မမှန်ပါ: ${body.take(MAX_ERROR_BODY)}") }
+            val encoded = root.get("audio_base64")?.takeIf { !it.isJsonNull }?.asString
+                ?: error("VoxCPM2 response တွင် audio_base64 မပါပါ")
+            val bytes = runCatching { Base64.decode(encoded, Base64.DEFAULT) }
+                .getOrElse { error("VoxCPM2 audio Base64 decode မရပါ") }
+            if (bytes.size < 44 || !bytes.copyOfRange(0, 4).contentEquals(byteArrayOf('R'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 'F'.code.toByte()))) {
+                error("VoxCPM2 မှ WAV audio မမှန်ပါ")
+            }
+            val output = File.createTempFile("voxcpm2_", ".wav", context.cacheDir)
+            output.writeBytes(bytes)
+            if (!output.exists() || output.length() == 0L) {
+                output.delete()
+                error("VoxCPM2 audio response ဗလာဖြစ်နေပါသည်")
+            }
+            return output
         }
     }
+
+    /** VoxCPM2 requires WAV Base64; normalize every sample, including MP3 built-ins. */
+    private fun prepareWavReference(context: Context, input: File): File {
+        val output = File(context.cacheDir, "voxcpm2_ref_${System.nanoTime()}.wav")
+        val command = "-y -i ${shellQuote(input.absolutePath)} -vn -ar 24000 -ac 1 -c:a pcm_s16le ${shellQuote(output.absolutePath)}"
+        val session = FFmpegKit.execute(command)
+        if (!ReturnCode.isSuccess(session.returnCode) || !output.exists() || output.length() < 44L) {
+            output.delete()
+            error("WAV reference audio သို့ ပြောင်းမရပါ")
+        }
+        return output
+    }
+
+    private fun shellQuote(path: String): String = "'" + path.replace("'", "'\\''") + "'"
+
+    private fun isRetryable(code: Int): Boolean = code == 429 || code == 502 || code == 503 || code == 504
+
+    private fun parseError(code: Int, body: String): String {
+        val fallback = "HTTP $code: ${body.take(MAX_ERROR_BODY).ifBlank { "service error" }}"
+        return runCatching {
+            val root = JsonParser.parseString(body)
+            if (!root.isJsonObject) return@runCatching fallback
+            val obj = root.asJsonObject
+            val detail = obj.get("detail")
+            if (detail?.isJsonPrimitive == true) return@runCatching "HTTP $code: ${detail.asString.take(MAX_ERROR_BODY)}"
+            if (detail?.isJsonObject == true) {
+                val d = detail.asJsonObject
+                val errorCode = d.get("code")?.asString?.takeIf { it.isNotBlank() }
+                val message = d.get("message")?.asString?.takeIf { it.isNotBlank() }
+                if (message != null) return@runCatching "HTTP $code${if (errorCode != null) " [$errorCode]" else ""}: ${message.take(MAX_ERROR_BODY)}"
+            }
+            val message = obj.get("message")?.asString?.takeIf { it.isNotBlank() }
+            if (message != null) "HTTP $code: ${message.take(MAX_ERROR_BODY)}" else fallback
+        }.getOrDefault(fallback)
+    }
+
+    private class ApiException(val code: Int, override val message: String, val retryable: Boolean) : Exception(message)
 }

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.recapmaker.app.data.local.TokenManager
 import com.recapmaker.app.data.local.VideoHistoryDao
 import com.recapmaker.app.data.local.VideoHistoryEntity
 import com.recapmaker.app.data.model.*
@@ -70,6 +71,7 @@ data class EditorState(
 class EditorViewModel @Inject constructor(
     private val repo: MainRepository,
     private val historyDao: VideoHistoryDao,
+    private val tokenManager: TokenManager,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
@@ -289,13 +291,18 @@ class EditorViewModel @Inject constructor(
             }
             state = state.copy(aiText = normalizedText)
 
-            // ── 1. VoxCPM preflight before any coin deduction ──
-            if (state.useVoxCpm && normalizedText.isNotBlank()) {
-                state = state.copy(processStatus = "VoxCPM service စစ်ဆေးနေသည်...")
-                if (!VoxCpmClient.isAvailable()) {
-                    state = state.copy(isProcessing = false, processStatus = "", error = "VoxCPM service မရနိုင်သေးပါ။ ခဏနောက် ပြန်စမ်းပါ။")
-                    return@launch
-                }
+            // ── 1. VoxCPM2 configuration preflight before any coin deduction ──
+            val voxCpm2Token = if (state.useVoxCpm && normalizedText.isNotBlank()) {
+                state = state.copy(processStatus = "VoxCPM2 authentication စစ်ဆေးနေသည်...")
+                (tokenManager.getVoxCpm2Token() ?: tokenManager.getToken()).orEmpty()
+            } else ""
+            if (state.useVoxCpm && normalizedText.isNotBlank() && !VoxCpmClient.isAvailable(voxCpm2Token)) {
+                state = state.copy(
+                    isProcessing = false,
+                    processStatus = "",
+                    error = "VoxCPM2 access token မတွေ့ပါ။ App account ဖြင့် ပြန်ဝင်ပြီး စမ်းပါ။",
+                )
+                return@launch
             }
 
             // ── 2. Coins ──
@@ -328,8 +335,8 @@ class EditorViewModel @Inject constructor(
             if (state.aiText.isNotBlank()) {
                 ttsAudioPath = when {
                     state.useVoxCpm -> {
-                        state = state.copy(processStatus = "VoxCPM voice generating...")
-                        generateVoxCpmAudio(context)
+                        state = state.copy(processStatus = "VoxCPM2 Cloudflare voice generating...")
+                        generateVoxCpmAudio(context, voxCpm2Token)
                     }
                     state.useEdgeTts && state.edgeTtsAvailable -> {
                         state = state.copy(processStatus = "Edge TTS generating...")
@@ -553,16 +560,16 @@ class EditorViewModel @Inject constructor(
 
     private fun cleanup(vararg paths: String?) { paths.filterNotNull().forEach { try { File(it).delete() } catch (_: Exception) {} } }
 
-    private suspend fun generateVoxCpmAudio(context: Context): String? {
+    private suspend fun generateVoxCpmAudio(context: Context, accessToken: String): String? {
         val normalizedText = normalizeTtsText(state.aiText)
         if (normalizedText.isBlank()) {
-            state = state.copy(error = "VoxCPM သို့ပို့ရန် စာသားမရှိပါ")
+            state = state.copy(error = "VoxCPM2 သို့ပို့ရန် စာသားမရှိပါ")
             return null
         }
         state = state.copy(aiText = normalizedText)
         val reference = state.voxcpmReferencePath?.let { File(it) }
         if (reference != null && (!reference.exists() || reference.length() == 0L)) {
-            state = state.copy(error = "VoxCPM voice sample မတွေ့ပါ")
+            state = state.copy(error = "VoxCPM2 voice sample မတွေ့ပါ")
             return null
         }
         val chunks = splitTextIntoChunks(normalizedText, 650)
@@ -573,15 +580,20 @@ class EditorViewModel @Inject constructor(
                 when (val result = VoxCpmClient.generate(
                     context = context,
                     text = chunk,
-                    referenceAudio = reference,
-                    controlInstruction = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
+                    referenceAudio = reference ?: run {
+                        state = state.copy(error = "VoxCPM2 voice sample ရွေးပါ")
+                        return null
+                    },
+                    accessToken = accessToken,
+                    styleControl = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
                     cfgValue = 2.0f,
-                    normalize = true,
-                    denoise = reference != null,
+                    inferenceTimesteps = 10,
+                    idempotencyKey = "recap-${UUID.randomUUID()}-chunk-$index",
                 )) {
                     is Result.Success -> generated += result.data.absolutePath
                     is Result.Error -> {
-                        state = state.copy(error = "VoxCPM: ${result.message}")
+                                                    state = state.copy(error = "VoxCPM2: ${result.message}")
+
                         return null
                     }
                 }
@@ -592,7 +604,7 @@ class EditorViewModel @Inject constructor(
             return combined
         } catch (e: Exception) {
             generated.forEach { File(it).delete() }
-            state = state.copy(error = "VoxCPM: ${e.message ?: "generation failed"}")
+            state = state.copy(error = "VoxCPM2: ${e.message ?: "generation failed"}")
             return null
         }
     }

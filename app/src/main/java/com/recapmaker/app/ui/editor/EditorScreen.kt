@@ -149,14 +149,14 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         ProviderOption("Edge TTS", "Microsoft voice • Free", Icons.Default.OfflineBolt, activeProvider == "edge", Cyan) { vm.setProvider("edge") }
                         Spacer(Modifier.height(6.dp))
                     }
-                    ProviderOption("VoxCPM", "TTS + Voice Clone • Online", Icons.Default.RecordVoiceOver, activeProvider == "voxcpm", Rose) { vm.setProvider("voxcpm") }
+                    ProviderOption("VoxCPM2", "Cloudflare API • TTS + Voice Clone", Icons.Default.RecordVoiceOver, activeProvider == "voxcpm", Rose) { vm.setProvider("voxcpm") }
 
                     AnimatedVisibility(activeProvider == "voxcpm") {
                         Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Surface(color = Rose.copy(.08f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.22f))) {
-                                Text("VoxCPM ကိုရွေးထားသောကြောင့် Google/Edge voice controls များကို ဖျောက်ထားသည်။ TTS သို့မဟုတ် Voice Clone နှစ်မျိုးလုံး သုံးနိုင်သည်။", color = TextPrimary, fontSize = 11.sp, modifier = Modifier.padding(10.dp))
+                                Text("VoxCPM2 ကိုရွေးထားသောကြောင့် Google/Edge voice controls များကို ဖျောက်ထားသည်။ Cloudflare API မှတစ်ဆင့် TTS + Voice Clone ပြုလုပ်မည်။", color = TextPrimary, fontSize = 11.sp, modifier = Modifier.padding(10.dp))
                             }
-                            Text("Voice sample ရွေးချယ်ရန်", color = TextMid, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("VoxCPM2 voice sample ရွေးချယ်ရန် (လိုအပ်သည်)", color = TextMid, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             builtInVoxCpmSamples.forEach { sample ->
                                 val selected = s.voxcpmSampleSource == "prebuilt:${sample.id}"
                                 Surface(
@@ -178,7 +178,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                                 Spacer(Modifier.width(7.dp)); Text(if (s.voxcpmSampleSource == "custom") "Custom: ${s.voxcpmReferenceName}" else "ကိုယ်ပိုင် voice sample ရွေးရန်", color = if (s.voxcpmSampleSource == "custom") Emerald else TextPrimary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             if (s.voxcpmReferencePath != null) TextButton({ vm.removeVoxCpmReference(ctx) }, modifier = Modifier.align(Alignment.End)) { Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("Sample ဖယ်ရှားရန်", color = ErrorRed, fontSize = 11.sp) }
-                            Text("Reference audio သည် 50 seconds အောက်ဖြစ်ရမည်။ Sample မရွေးလည်း VoxCPM TTS သုံးနိုင်သည်။", color = TextMid, fontSize = 10.sp)
+                            Text("Reference audio ကို WAV အဖြစ် app က အလိုအလျောက်ပြောင်းပြီး API သို့ပို့မည်။ 50 seconds အောက် sample တစ်ခု မဖြစ်မနေရွေးပါ။", color = TextMid, fontSize = 10.sp)
                         }
                     }
 
