@@ -25,6 +25,7 @@ import com.recapmaker.app.ui.settings.SettingsScreen
 import com.recapmaker.app.ui.subtitle.SubtitleScreen
 import com.recapmaker.app.ui.subtitle.SubtitleViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
