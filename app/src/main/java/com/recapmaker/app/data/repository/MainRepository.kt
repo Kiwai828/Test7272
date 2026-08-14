@@ -80,20 +80,29 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
     private fun edgeVoiceName(voice: String): Pair<String, String> =
         edgeVoices[voice] ?: (if (voice.contains('-')) voice to "Male" else "my-MM-$voice" to "Male")
 
+    private fun escapeXmlText(value: String): String = value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&apos;")
+
     suspend fun edgeTtsDirect(text: String, voice: String, apiKey: String, region: String = "eastus"): Result<File> {
         return try {
+        val safeRegion = region.trim().takeIf { it.matches(Regex("[a-zA-Z0-9-]{2,32}")) }
+            ?: return Result.Error("Invalid TTS region")
         val client = okhttp3.OkHttpClient()
         val (fullVoice, gender) = edgeVoiceName(voice)
         val ssml = """
             <speak version='1.0' xml:lang='my-MM'>
                 <voice xml:lang='my-MM' xml:gender='$gender' name='$fullVoice'>
-                    $text
+                    ${escapeXmlText(text)}
                 </voice>
             </speak>
         """.trimIndent()
 
         val tokenReq = okhttp3.Request.Builder()
-            .url("https://$region.api.cognitive.microsoft.com/sts/v1.0/issueToken")
+            .url("https://$safeRegion.api.cognitive.microsoft.com/sts/v1.0/issueToken")
             .addHeader("Ocp-Apim-Subscription-Key", apiKey)
             .post(okhttp3.RequestBody.create(null, ByteArray(0)))
             .build()
@@ -103,7 +112,7 @@ class MainRepository @Inject constructor(private val api: RecapApi) {
         tokenResp.close()
 
         val ttsReq = okhttp3.Request.Builder()
-            .url("https://$region.tts.speech.microsoft.com/cognitiveservices/v1")
+            .url("https://$safeRegion.tts.speech.microsoft.com/cognitiveservices/v1")
             .addHeader("Authorization", "Bearer $token")
             .addHeader("Content-Type", "application/ssml+xml")
             .addHeader("X-Microsoft-OutputFormat", "audio-16khz-32kbitrate-mono-mp3")

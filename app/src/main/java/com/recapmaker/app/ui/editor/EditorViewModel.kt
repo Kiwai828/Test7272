@@ -19,20 +19,12 @@ import com.recapmaker.app.data.repository.Result
 import com.recapmaker.app.media.FFmpegProcessor
 import com.recapmaker.app.media.VideoDownloader
 import com.recapmaker.app.media.VideoProcessService
-import com.recapmaker.app.media.rvc.DefaultRvcModels
-import com.recapmaker.app.media.rvc.RvcVoiceCloner
 import com.arthenica.ffmpegkit.ReturnCode
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.util.concurrent.TimeUnit
 import com.recapmaker.app.util.copyToFile
 import com.recapmaker.app.util.getCostForDuration
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -59,10 +51,6 @@ data class EditorState(
     val extraClips: List<String> = emptyList(),
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
-    val rvcEnabled: Boolean = false, val rvcSynthPath: String? = null, val rvcHubertPath: String? = null,
-    val rvcRmvpePath: String? = null, val rvcPitch: Int = 0,
-    val rvcSamplePath: String? = null, val rvcSampleName: String? = null,
-    val rvcDownloading: Boolean = false, val rvcDownloadProgress: Float = 0f, val rvcDownloadStatus: String = "",
 )
 
 
@@ -70,17 +58,14 @@ data class EditorState(
 class EditorViewModel @Inject constructor(
     private val repo: MainRepository,
     private val historyDao: VideoHistoryDao,
-    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
-    init { loadCoins(); loadHistory(); checkEdgeTts(); restoreRvcModels() }
+    init { loadCoins(); loadHistory(); checkEdgeTts() }
 
     private fun checkEdgeTts() { viewModelScope.launch { when (val r = repo.getEdgeTtsConfig()) { is Result.Success -> state = state.copy(edgeTtsAvailable = true); is Result.Error -> state = state.copy(edgeTtsAvailable = false) } } }
 
     private fun loadCoins() { viewModelScope.launch { when (val r = repo.getUserInfo()) { is Result.Success -> state = state.copy(gold = r.data.gold, silver = r.data.silver, pricingTiers = r.data.pricing_tiers ?: emptyList()); is Result.Error -> {} } } }
     val costText: String get() { val d = state.videoDuration; if (d == 0 && state.videoLocalPath == null) return ""; val c = getCostForDuration(d, state.pricingTiers); if (c == -1) return "(ရှည်လွန်း)"; if (c == 0) return "(အခမဲ့)"; return if (state.aiText.isNotBlank() && VoiceData.isGeminiVoice(state.selectedVoice)) "(🥇 $c Gold)" else "($c Coins)" }
-    // RVC needs at least the synth generator + HuBERT embedder to convert a voice
-    val rvcReady: Boolean get() = state.rvcSynthPath != null && state.rvcHubertPath != null
     val filteredVoices: List<VoiceInfo> get() { val s = if (state.voiceTab == "google") VoiceData.googleVoices else VoiceData.microsoftVoices; val q = state.voiceSearch.lowercase().trim(); return if (q.isEmpty()) s else s.filter { it.label.lowercase().contains(q) || it.gender.name.lowercase().contains(q) } }
 
     // ═══ VIDEO SOURCE ═══
@@ -165,150 +150,6 @@ class EditorViewModel @Inject constructor(
     }
     fun setEdgeTtsAvailable(v: Boolean) { state = state.copy(edgeTtsAvailable = v) }
 
-    // ═══ ON-DEVICE RVC VOICE CLONE (free, offline) ═══
-    private fun rvcPrefs() = appContext.getSharedPreferences("rvc_models", Context.MODE_PRIVATE)
-
-    private fun restoreRvcModels() {
-        val p = rvcPrefs()
-        val synth = p.getString("synth", null)?.takeIf { File(it).exists() }
-        val hubert = p.getString("hubert", null)?.takeIf { File(it).exists() }
-        val rmvpe = p.getString("rmvpe", null)?.takeIf { File(it).exists() }
-        val sample = p.getString("sample", null)?.takeIf { File(it).exists() }
-        state = state.copy(
-            rvcEnabled = p.getBoolean("enabled", false),
-            rvcSynthPath = synth, rvcHubertPath = hubert, rvcRmvpePath = rmvpe,
-            rvcPitch = p.getInt("pitch", 0),
-            rvcSamplePath = sample, rvcSampleName = p.getString("sample_name", null),
-        )
-    }
-
-    fun setRvcEnabled(v: Boolean) { state = state.copy(rvcEnabled = v); rvcPrefs().edit().putBoolean("enabled", v).apply() }
-
-    fun setRvcModel(kind: String, uri: Uri, context: Context) {
-        viewModelScope.launch {
-            val name = when (kind) { "synth" -> "synth.onnx"; "hubert" -> "hubert.onnx"; else -> "rmvpe.onnx" }
-            val f = File(context.cacheDir, "rvc_$name")
-            if (uri.copyToFile(context, f) && f.length() > 0L) {
-                val p = rvcPrefs()
-                when (kind) {
-                    "synth" -> { state = state.copy(rvcSynthPath = f.absolutePath); p.edit().putString("synth", f.absolutePath).apply() }
-                    "hubert" -> { state = state.copy(rvcHubertPath = f.absolutePath); p.edit().putString("hubert", f.absolutePath).apply() }
-                    else -> { state = state.copy(rvcRmvpePath = f.absolutePath); p.edit().putString("rmvpe", f.absolutePath).apply() }
-                }
-            } else state = state.copy(error = "Model file ဖတ်မရ")
-        }
-    }
-
-    fun removeRvcModel(kind: String) {
-        val p = rvcPrefs()
-        when (kind) {
-            "synth" -> { state.rvcSynthPath?.let { runCatching { File(it).delete() } }; state = state.copy(rvcSynthPath = null); p.edit().remove("synth").apply() }
-            "hubert" -> { state.rvcHubertPath?.let { runCatching { File(it).delete() } }; state = state.copy(rvcHubertPath = null); p.edit().remove("hubert").apply() }
-            else -> { state.rvcRmvpePath?.let { runCatching { File(it).delete() } }; state = state.copy(rvcRmvpePath = null); p.edit().remove("rmvpe").apply() }
-        }
-    }
-
-    fun setRvcPitch(v: Int) { state = state.copy(rvcPitch = v); rvcPrefs().edit().putInt("pitch", v).apply() }
-
-    /** Voice sample of the person you want to clone — any audio format (mp3/m4a/wav/ogg/aac/flac...). */
-    fun onRvcSampleSelected(uri: Uri, context: Context) {
-        viewModelScope.launch {
-            val dir = File(context.filesDir, "rvc").apply { mkdirs() }
-            val name = runCatching {
-                context.contentResolver.query(uri, null, null, null, null)?.use { c ->
-                    val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (i >= 0) c.getString(i) else null
-                }
-            }.getOrNull() ?: uri.lastPathSegment ?: "voice_sample.m4a"
-            val ext = name.substringAfterLast('.', "m4a").takeIf { it.length in 1..5 } ?: "m4a"
-            val f = File(dir, "voice_sample_${System.currentTimeMillis()}.$ext")
-            if (uri.copyToFile(context, f) && f.length() > 0L) {
-                val p = rvcPrefs()
-                state = state.copy(rvcSamplePath = f.absolutePath, rvcSampleName = name)
-                p.edit().putString("sample", f.absolutePath).putString("sample_name", name).apply()
-            } else state = state.copy(error = "အသံဖိုင် ဖတ်မရပါ")
-        }
-    }
-
-    fun removeRvcSample() {
-        state.rvcSamplePath?.let { runCatching { File(it).delete() } }
-        state = state.copy(rvcSamplePath = null, rvcSampleName = null)
-        rvcPrefs().edit().remove("sample").remove("sample_name").apply()
-    }
-
-    /**
-     * One-tap download of the default voice-clone model bundle (synth + hubert + rmvpe)
-     * from HuggingFace. Files land in filesDir/rvc/ (persistent), then the model paths
-     * are wired into state + prefs and the toggle is switched ON.
-     */
-    fun downloadDefaultVoice() {
-        if (state.rvcDownloading) return
-        viewModelScope.launch(Dispatchers.IO) {
-            state = state.copy(rvcDownloading = true, rvcDownloadProgress = 0f, rvcDownloadStatus = "Connecting...", error = null)
-            try {
-                val dir = File(appContext.filesDir, "rvc").apply { mkdirs() }
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(300, TimeUnit.SECONDS)
-                    .build()
-                val totalBytes = DefaultRvcModels.totalMb * 1024L * 1024L
-                var completedBytes = 0L
-                var synthPath: String? = null
-                var hubertPath: String? = null
-                var rmvpePath: String? = null
-                for (m in DefaultRvcModels.all) {
-                    state = state.copy(rvcDownloadStatus = "Downloading ${m.file} (${m.sizeMb} MB)...")
-                    val target = File(dir, m.file)
-                    val req = Request.Builder().url(m.url).build()
-                    client.newCall(req).execute().use { resp ->
-                        if (!resp.isSuccessful) error("HTTP ${resp.code} — ${m.file}")
-                        val body = resp.body ?: error("Empty response for ${m.file}")
-                        val tmp = File(dir, m.file + ".part")
-                        var lastUpdate = 0L
-                        body.byteStream().use { input ->
-                            FileOutputStream(tmp).use { out ->
-                                val buf = ByteArray(256 * 1024)
-                                var read: Int
-                                var done = 0L
-                                while (input.read(buf).also { read = it } != -1) {
-                                    out.write(buf, 0, read)
-                                    done += read
-                                    if (done - lastUpdate >= 1024L * 1024L) {
-                                        lastUpdate = done
-                                        val overall = ((completedBytes + done).toFloat() / totalBytes).coerceIn(0f, 1f)
-                                        state = state.copy(rvcDownloadProgress = overall)
-                                    }
-                                }
-                            }
-                        }
-                        if (tmp.length() < 1024L * 1024L) error("${m.file} download incomplete")
-                        if (target.exists()) target.delete()
-                        tmp.renameTo(target)
-                    }
-                    completedBytes += m.sizeMb * 1024L * 1024L
-                    when (m.file) {
-                        "synth.onnx" -> synthPath = target.absolutePath
-                        "hubert.onnx" -> hubertPath = target.absolutePath
-                        else -> rmvpePath = target.absolutePath
-                    }
-                }
-                rvcPrefs().edit()
-                    .putString("synth", synthPath)
-                    .putString("hubert", hubertPath)
-                    .putString("rmvpe", rmvpePath)
-                    .putBoolean("enabled", true)
-                    .apply()
-                state = state.copy(
-                    rvcSynthPath = synthPath, rvcHubertPath = hubertPath, rvcRmvpePath = rmvpePath,
-                    rvcEnabled = true, rvcDownloading = false, rvcDownloadProgress = 1f, rvcDownloadStatus = "",
-                    success = "✅ Voice model ဒေါင်းလုဒ် ပြီးပါပြီ — ${DefaultRvcModels.voiceName}",
-                )
-            } catch (e: Exception) {
-                state = state.copy(rvcDownloading = false, rvcDownloadStatus = "", error = "Download: ${e.message}")
-            }
-        }
-    }
-
     // ═══ AI ═══
     fun analyzeScript(ctx: Context) { val vp = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }; viewModelScope.launch { state = state.copy(isAnalyzing = true, error = null, processStatus = "Audio extract..."); try { val ap = FFmpegProcessor.extractAudio(vp, ctx) ?: run { state = state.copy(isAnalyzing = false, processStatus = "", error = "Audio extract မရ"); return@launch }; state = state.copy(processStatus = "AI Transcribe..."); val af = File(ap); val b64 = android.util.Base64.encodeToString(af.readBytes(), android.util.Base64.NO_WRAP); af.delete(); when (val r = repo.analyzeText(text = "", instruction = "Listen to this audio. Transcribe to English, translate to natural spoken Burmese. Output ONLY Burmese text.", audioBase64 = b64)) { is Result.Success -> { val t = r.data.text ?: ""; if (t.isBlank()) state = state.copy(isAnalyzing = false, processStatus = "", error = "စကားမတွေ့") else state = state.copy(aiText = t, isAnalyzing = false, processStatus = "") }; is Result.Error -> state = state.copy(isAnalyzing = false, processStatus = "", error = "AI: ${r.message}") } } catch (e: Exception) { state = state.copy(isAnalyzing = false, processStatus = "", error = "${e.message}") } } }
     fun translateScript() { if (state.aiText.isBlank()) return; viewModelScope.launch { state = state.copy(isAnalyzing = true); when (val r = repo.analyzeText(text = state.aiText, instruction = "Translate to natural spoken Burmese. Output ONLY Burmese text.")) { is Result.Success -> state = state.copy(aiText = r.data.text ?: state.aiText, isAnalyzing = false); is Result.Error -> state = state.copy(isAnalyzing = false, error = "${r.message}") } } }
@@ -325,6 +166,7 @@ class EditorViewModel @Inject constructor(
     // ═══════════════════════════════════════════
 
     fun startProcessing(context: Context) {
+        if (state.isProcessing) return
         val inputPath = state.videoLocalPath ?: run { state = state.copy(error = "Video ရွေးပါ"); return }
         viewModelScope.launch {
             state = state.copy(isProcessing = true, error = null, success = null)
@@ -351,24 +193,13 @@ class EditorViewModel @Inject constructor(
                 } else {
                     generateFullTtsAudio(context, state.aiText, state.selectedVoice, state.videoDuration)
                 }
-            }
-
-            // ── 2.5 Voice Clone (RVC on-device) — convert the TTS voice into the chosen person's voice ──
-            if (ttsAudioPath != null && state.rvcEnabled && rvcReady) {
-                state = state.copy(processStatus = "RVC အသံပြောင်းနေသည် (on-device)...")
-                val synth = File(state.rvcSynthPath!!)
-                val hubert = File(state.rvcHubertPath!!)
-                val rmvpe = state.rvcRmvpePath?.let { File(it) }
-                when (val r = RvcVoiceCloner.convert(context, File(ttsAudioPath), synth, hubert, rmvpe, state.rvcPitch)) {
-                    is RvcVoiceCloner.Result.Success -> {
-                        File(ttsAudioPath).delete()
-                        ttsAudioPath = r.file.absolutePath
+                if (ttsAudioPath == null) {
+                    if (cost > 0) {
+                        repo.refundCoins(cost, "TTS generation failed", if (coinTypeUsed == "gold") "gold" else "silver")
+                        loadCoins()
                     }
-                    is RvcVoiceCloner.Result.Error -> {
-                        if (cost > 0) { repo.refundCoins(cost, "Failed", if (coinTypeUsed == "gold") "gold" else "silver"); loadCoins() }
-                        state = state.copy(isProcessing = false, processStatus = "", error = "Voice Clone: ${r.message}")
-                        return@launch
-                    }
+                    state = state.copy(isProcessing = false, processStatus = "", error = "အသံဖန်တီးမရပါ")
+                    return@launch
                 }
             }
 
@@ -463,13 +294,16 @@ class EditorViewModel @Inject constructor(
             if (audioPath != null) {
                 chunkFiles.add(audioPath)
             } else {
-                Log.w("TTS", "Chunk $idx failed, skipping")
+                Log.w("TTS", "Chunk $idx failed")
+                chunkFiles.forEach { File(it).delete() }
+                state = state.copy(processStatus = "⚠ TTS audio generate မရ")
+                return null
             }
         }
 
         if (chunkFiles.isEmpty()) {
             state = state.copy(processStatus = "⚠ TTS audio generate မရ")
-            delay(1500); return null
+            return null
         }
 
         // Concatenate if multiple chunks

@@ -31,10 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import com.recapmaker.app.media.rvc.DefaultRvcModels
 import com.recapmaker.app.ui.common.*
 
 @Composable
@@ -43,10 +39,6 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onVideoSelected(it, ctx) } }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onLogoSelected(it) } }
     val extraClipPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { uri -> vm.addExtraClip(uri, ctx) } }
-    val synthPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.setRvcModel("synth", it, ctx) } }
-    val hubertPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.setRvcModel("hubert", it, ctx) } }
-    val rmvpePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.setRvcModel("rmvpe", it, ctx) } }
-    val samplePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { vm.onRvcSampleSelected(it, ctx) } }
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -151,111 +143,6 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     else LazyVerticalGrid(columns = GridCells.Fixed(2), Modifier.fillMaxWidth().heightIn(max = 260.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { items(voices, key = { it.name }) { v -> VoiceCard(v.name, v.label, v.gender, s.selectedVoice == v.name, { vm.selectVoice(v.name) }) } }
                     if (s.voiceTab == "google" && s.aiText.isNotBlank()) { Spacer(Modifier.height(4.dp)); Surface(color = WarningYellow.copy(.08f), shape = RoundedCornerShape(8.dp)) { Text("⚠ Google Voice → Gold Coins", color = WarningYellow, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) } }
                     if (s.voiceTab == "microsoft" && s.edgeTtsAvailable) { Spacer(Modifier.height(4.dp)); Surface(color = Cyan.copy(.08f), shape = RoundedCornerShape(8.dp)) { Text(if (s.useEdgeTts) "✅ Edge TTS ဖွင့်ထားသည် — အခမဲ့" else "🔷 Edge TTS Local Mode", color = Cyan, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) } }
-                }
-
-                // ═══ 5-AA. VOICE CLONE — RVC (on-device, free) ═══
-                SectionCard("Voice Clone — အသံတူပြောင်း (RVC)", Icons.Default.RecordVoiceOver, Rose) {
-                    Surface(color = Cyan.copy(.08f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Text("🔒 100% အခမဲ့ — API key မလို၊ offline အလုပ်လုပ်", color = Cyan, fontSize = 11.sp, modifier = Modifier.padding(8.dp))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    // Voice Clone on/off switch — model pickers only show when ON, RVC only runs when ON
-                    Surface(color = if (s.rvcEnabled) Rose.copy(0.06f) else Color.Transparent, shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, if (s.rvcEnabled) Rose.copy(0.2f) else Purple.copy(0.07f))) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Mic, null, tint = if (s.rvcEnabled) Rose else TextDim, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Voice Clone (TTS အသံ → ကိုယ်ကြိုက်သူအသံ)", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                            Surface(color = if (s.rvcEnabled) Rose.copy(0.15f) else SurfaceDark, shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, if (s.rvcEnabled) Rose.copy(0.3f) else CardBorder)) {
-                                Text(if (s.rvcEnabled) "ON" else "OFF", color = if (s.rvcEnabled) Rose else TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Switch(checked = s.rvcEnabled, onCheckedChange = { vm.setRvcEnabled(it) }, colors = SwitchDefaults.colors(checkedTrackColor = Rose, checkedThumbColor = Color.White, uncheckedTrackColor = SurfaceDark, uncheckedBorderColor = CardBorder))
-                        }
-                    }
-                    AnimatedVisibility(s.rvcEnabled) {
-                        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // ── STEP 1 · THE VOICE (what the user asked for: a place to add the voice) ──
-                            StepHeader(1, "Clone လုပ်မဲ့ အသံ ထည့်ပါ", Rose)
-                            if (s.rvcSamplePath == null) {
-                                Surface(onClick = { samplePicker.launch("audio/*") }, color = Rose.copy(.06f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Rose.copy(.35f)), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Rose.copy(.15f)), contentAlignment = Alignment.Center) {
-                                            Icon(Icons.Default.Mic, null, tint = Rose, modifier = Modifier.size(22.dp))
-                                        }
-                                        Spacer(Modifier.height(8.dp))
-                                        Text("🎤 အသံနမူနာ ရွေးရန်", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                        Spacer(Modifier.height(2.dp))
-                                        Text("mp3 · m4a · wav · ogg · aac · flac — format အကုန်ရပါတယ်", color = TextDim, fontSize = 10.sp)
-                                        Spacer(Modifier.height(2.dp))
-                                        Text("ဒီအသံကို ပြောင်းမယ့် ကိုယ်ကြိုက်တဲ့ အသံပါ", color = Rose.copy(.8f), fontSize = 10.sp)
-                                    }
-                                }
-                            } else {
-                                VoiceSampleCard(s.rvcSampleName ?: "Voice sample", s.rvcSamplePath!!, onRemove = { vm.removeRvcSample() })
-                            }
-
-                            HorizontalDivider(color = CardBorder)
-
-                            // ── STEP 2 · THE RVC MODEL (engine that reproduces the voice) ──
-                            StepHeader(2, "RVC Voice Model (ပြောင်းတဲ့ engine)", Purple)
-                            Text("အသံနမူနာနဲ့ ကိုက်တဲ့ RVC model လိုပါတယ် — အောက်က (၂) နည်းထဲက တစ်နည်းရွေးပါ", color = TextDim, fontSize = 11.sp)
-                            if (s.rvcDownloading) {
-                                Surface(color = Rose.copy(.06f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.2f)), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.padding(12.dp)) {
-                                        Text(s.rvcDownloadStatus.ifBlank { "Downloading..." }, color = TextPrimary, fontSize = 11.sp)
-                                        Spacer(Modifier.height(6.dp))
-                                        LinearProgressIndicator(progress = { s.rvcDownloadProgress }, Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = Rose, trackColor = CardBorder)
-                                        Spacer(Modifier.height(4.dp))
-                                        Text("${(s.rvcDownloadProgress * 100).toInt()}% — ${DefaultRvcModels.voiceName}", color = TextDim, fontSize = 10.sp)
-                                    }
-                                }
-                            } else if (s.rvcSynthPath == null) {
-                                Surface(onClick = { vm.downloadDefaultVoice() }, color = Rose.copy(.12f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.35f)), modifier = Modifier.fillMaxWidth()) {
-                                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.CloudDownload, null, tint = Rose, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Column(Modifier.weight(1f)) {
-                                            Text("Default voice model ဒေါင်းလုဒ် (${DefaultRvcModels.voiceName})", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                            Text("~${DefaultRvcModels.totalMb} MB — တစ်ခါသာ လိုပါတယ်", color = TextDim, fontSize = 10.sp)
-                                        }
-                                    }
-                                }
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    HorizontalDivider(Modifier.weight(1f), color = CardBorder)
-                                    Text("  OR ကိုယ့် model ရွေးရန်  ", color = TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    HorizontalDivider(Modifier.weight(1f), color = CardBorder)
-                                }
-                            }
-                            if (!vm.rvcReady) {
-                                Surface(color = WarningYellow.copy(.08f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Text("⚠ Voice model မရွေးရသေးပါ — အနည်းဆုံး (၂) ခု ရွေးပေးပါ", color = WarningYellow, fontSize = 10.sp, modifier = Modifier.padding(8.dp))
-                                }
-                            }
-                            ModelSlot("Voice Model (synth.onnx)", s.rvcSynthPath, required = true, onPick = { synthPicker.launch("*/*") }, onRemove = { vm.removeRvcModel("synth") })
-                            ModelSlot("HuBERT Embedder (hubert.onnx)", s.rvcHubertPath, required = true, onPick = { hubertPicker.launch("*/*") }, onRemove = { vm.removeRvcModel("hubert") })
-                            ModelSlot("RMVPE Pitch (rmvpe.onnx)", s.rvcRmvpePath, required = false, onPick = { rmvpePicker.launch("*/*") }, onRemove = { vm.removeRvcModel("rmvpe") })
-                            Column {
-                                Text("Pitch: ${s.rvcPitch} semitone", color = TextDim, fontSize = 12.sp)
-                                Slider(value = s.rvcPitch.toFloat(), onValueChange = { vm.setRvcPitch(it.toInt()) }, valueRange = -12f..12f, steps = 23, colors = SliderDefaults.colors(thumbColor = Rose, activeTrackColor = Rose))
-                            }
-                            var showModelInfo by remember { mutableStateOf(false) }
-                            Row(Modifier.fillMaxWidth().clickable { showModelInfo = !showModelInfo }, verticalAlignment = Alignment.CenterVertically) {
-                                Icon(if (showModelInfo) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, modifier = Modifier.size(14.dp), tint = TextDim)
-                                Spacer(Modifier.width(4.dp))
-                                Text(if (showModelInfo) "အသေးစိတ် ပိတ်ရန်" else "Model ဆိုတာ ဘာလဲ? (အသေးစိတ်)", color = TextDim, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            AnimatedVisibility(showModelInfo) {
-                                Surface(color = SurfaceDark, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("📥 အသံနမူနာကို ပြောင်းဖို့ အဲဒီအသံနဲ့ train ထားတဲ့ RVC model (ONNX) လိုပါတယ် — format အကုန်ရပါတယ်။", color = TextMid, fontSize = 11.sp)
-                                        Text("• နည်းလမ်း (၁): Default voice model ဒေါင်းလုဒ် — အဆင်သင့် clone လုပ်ပြီးသား အသံ", color = TextMid, fontSize = 11.sp)
-                                        Text("• နည်းလမ်း (၂): ကိုယ့် model ရှိရင် w-okada/voice-changer ရဲ့ export2onnx.py နဲ့ .onnx (၃) ခုထုတ်ပြီး ရွေးပါ (f0 model ဆိုရင် RMVPE ပါ လိုပါတယ်)", color = TextMid, fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
 
                 // ═══ 5-A. VIDEO EFFECTS ═══
@@ -444,65 +331,5 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
             }
         }
     }
-    }
-}
-
-@Composable
-private fun ModelSlot(label: String, path: String?, required: Boolean, onPick: () -> Unit, onRemove: () -> Unit) {
-    Surface(onClick = onPick, color = if (path != null) Emerald.copy(.08f) else SurfaceDark, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, if (path != null) Emerald.copy(.3f) else Rose.copy(.3f))) {
-        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (path != null) Icons.Default.CheckCircle else Icons.Default.CloudDownload, null, tint = if (path != null) Emerald else Rose, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f)) {
-                Text(label + if (!required) " (optional)" else "", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                if (path != null) Text(File(path).name, color = TextMid, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                else Text("ONNX file ရွေးရန်", color = TextDim, fontSize = 10.sp)
-            }
-            if (path != null) IconButton(onClick = onRemove, modifier = Modifier.size(26.dp)) { Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(15.dp)) }
-        }
-    }
-}
-
-@Composable
-private fun StepHeader(step: Int, title: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(color.copy(.18f)), contentAlignment = Alignment.Center) {
-            Text("$step", color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(title, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun VoiceSampleCard(name: String, path: String, onRemove: () -> Unit) {
-    val context = LocalContext.current
-    val player = remember(path) { ExoPlayer.Builder(context).build().apply { setMediaItem(MediaItem.fromUri(Uri.fromFile(File(path)))); prepare() } }
-    var playing by remember { mutableStateOf(false) }
-    DisposableEffect(path) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED) { player.seekTo(0); player.playWhenReady = false }
-            }
-        }
-        player.addListener(listener)
-        onDispose { player.removeListener(listener); player.release() }
-    }
-    Surface(color = Rose.copy(.08f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Rose.copy(.35f)), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(Rose.copy(.15f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.AudioFile, null, tint = Rose, modifier = Modifier.size(18.dp))
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(name, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("✅ အသံနမူနာ ထည့်ပြီးပါပြီ — နားထောင်ကြည့်ရန်", color = Emerald, fontSize = 10.sp)
-            }
-            IconButton(onClick = { if (playing) player.pause() else { player.prepare(); player.playWhenReady = true } }, modifier = Modifier.size(34.dp)) {
-                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Rose, modifier = Modifier.size(22.dp))
-            }
-            IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(16.dp)) }
-        }
     }
 }
