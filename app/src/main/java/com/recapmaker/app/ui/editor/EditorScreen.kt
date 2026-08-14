@@ -149,12 +149,12 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                         ProviderOption("Edge TTS", "Microsoft voice • Free", Icons.Default.OfflineBolt, activeProvider == "edge", Cyan) { vm.setProvider("edge") }
                         Spacer(Modifier.height(6.dp))
                     }
-                    ProviderOption("VoxCPM2", "Cloudflare API • TTS + Voice Clone", Icons.Default.RecordVoiceOver, activeProvider == "voxcpm", Rose) { vm.setProvider("voxcpm") }
+                    ProviderOption("VoxCPM2", "Direct Modal • TTS + Voice Clone", Icons.Default.RecordVoiceOver, activeProvider == "voxcpm", Rose) { vm.setProvider("voxcpm") }
 
                     AnimatedVisibility(activeProvider == "voxcpm") {
                         Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Surface(color = Rose.copy(.08f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.22f))) {
-                                Text("VoxCPM2 ကိုရွေးထားသောကြောင့် Google/Edge voice controls များကို ဖျောက်ထားသည်။ Cloudflare API မှတစ်ဆင့် TTS + Voice Clone ပြုလုပ်မည်။", color = TextPrimary, fontSize = 11.sp, modifier = Modifier.padding(10.dp))
+                                Text("VoxCPM2 ကိုရွေးထားသောကြောင့် Google/Edge voice controls များကို ဖျောက်ထားသည်။ Modal deployment ကို တိုက်ရိုက်ခေါ်ပြီး TTS + Voice Clone ပြုလုပ်မည်။ စာတစ်ပိုင်းလျှင် စာလုံး 500 အထိ ခွဲပို့မည်။", color = TextPrimary, fontSize = 11.sp, modifier = Modifier.padding(10.dp))
                             }
                             Text("VoxCPM2 voice sample ရွေးချယ်ရန် (လိုအပ်သည်)", color = TextMid, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             builtInVoxCpmSamples.forEach { sample ->

@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.recapmaker.app.data.local.TokenManager
 import com.recapmaker.app.data.local.VideoHistoryDao
 import com.recapmaker.app.data.local.VideoHistoryEntity
 import com.recapmaker.app.data.model.*
@@ -71,7 +70,6 @@ data class EditorState(
 class EditorViewModel @Inject constructor(
     private val repo: MainRepository,
     private val historyDao: VideoHistoryDao,
-    private val tokenManager: TokenManager,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     var state by mutableStateOf(EditorState()); private set
@@ -291,13 +289,10 @@ class EditorViewModel @Inject constructor(
             }
             state = state.copy(aiText = normalizedText)
 
-            // ── 1. VoxCPM2 configuration preflight before any coin deduction ──
-            val voxCpm2Token = if (state.useVoxCpm && normalizedText.isNotBlank()) {
-                state = state.copy(processStatus = "VoxCPM2 authentication စစ်ဆေးနေသည်...")
-                tokenManager.getVoxCpm2Token().orEmpty()
-            } else ""
+            // ── 1. Direct Modal health preflight before any coin deduction ──
             if (state.useVoxCpm && normalizedText.isNotBlank()) {
-                val preflightError = VoxCpmClient.preflight(voxCpm2Token)
+                state = state.copy(processStatus = "Modal VoxCPM2 health စစ်ဆေးနေသည်...")
+                val preflightError = VoxCpmClient.preflight()
                 if (preflightError != null) {
                     state = state.copy(isProcessing = false, processStatus = "", error = preflightError)
                     return@launch
@@ -334,8 +329,8 @@ class EditorViewModel @Inject constructor(
             if (state.aiText.isNotBlank()) {
                 ttsAudioPath = when {
                     state.useVoxCpm -> {
-                        state = state.copy(processStatus = "VoxCPM2 Cloudflare voice generating...")
-                        generateVoxCpmAudio(context, voxCpm2Token)
+                        state = state.copy(processStatus = "Direct Modal VoxCPM2 voice generating...")
+                        generateVoxCpmAudio(context)
                     }
                     state.useEdgeTts && state.edgeTtsAvailable -> {
                         state = state.copy(processStatus = "Edge TTS generating...")
@@ -559,7 +554,7 @@ class EditorViewModel @Inject constructor(
 
     private fun cleanup(vararg paths: String?) { paths.filterNotNull().forEach { try { File(it).delete() } catch (_: Exception) {} } }
 
-    private suspend fun generateVoxCpmAudio(context: Context, accessToken: String): String? {
+    private suspend fun generateVoxCpmAudio(context: Context): String? {
         val normalizedText = normalizeTtsText(state.aiText)
         if (normalizedText.isBlank()) {
             state = state.copy(error = "VoxCPM2 သို့ပို့ရန် စာသားမရှိပါ")
@@ -571,11 +566,11 @@ class EditorViewModel @Inject constructor(
             state = state.copy(error = "VoxCPM2 voice sample မတွေ့ပါ")
             return null
         }
-        val chunks = splitTextIntoChunks(normalizedText, 650)
+        val chunks = splitTextIntoChunks(normalizedText, 500)
         val generated = mutableListOf<String>()
         try {
             chunks.forEachIndexed { index, chunk ->
-                state = state.copy(processStatus = "VoxCPM generating ${index + 1}/${chunks.size}...")
+                state = state.copy(processStatus = "Modal VoxCPM2 generating ${index + 1}/${chunks.size}...")
                 when (val result = VoxCpmClient.generate(
                     context = context,
                     text = chunk,
@@ -583,11 +578,9 @@ class EditorViewModel @Inject constructor(
                         state = state.copy(error = "VoxCPM2 voice sample ရွေးပါ")
                         return null
                     },
-                    accessToken = accessToken,
                     styleControl = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
                     cfgValue = 2.0f,
                     inferenceTimesteps = 10,
-                    idempotencyKey = "recap-${UUID.randomUUID()}-chunk-$index",
                 )) {
                     is Result.Success -> generated += result.data.absolutePath
                     is Result.Error -> {

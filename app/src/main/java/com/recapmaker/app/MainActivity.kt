@@ -102,7 +102,6 @@ class MainActivity : ComponentActivity() {
                             username = dashVm.state.username,
                             email = dashVm.state.email,
                             vm = authVm,
-                            tokenManager = tokenManager,
                             onBack = { nav.popBackStack() },
                             onLogout = {
                                 lifecycleScope.launch {

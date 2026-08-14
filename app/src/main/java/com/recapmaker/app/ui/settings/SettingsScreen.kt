@@ -17,9 +17,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.recapmaker.app.data.local.TokenManager
 import com.recapmaker.app.ui.auth.AuthViewModel
-import kotlinx.coroutines.launch
 import com.recapmaker.app.ui.common.*
 
 @Composable
@@ -27,7 +25,6 @@ fun SettingsScreen(
     username: String,
     email: String?,
     vm: AuthViewModel,
-    tokenManager: TokenManager,
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onEmailLinked: () -> Unit = {},
@@ -35,15 +32,7 @@ fun SettingsScreen(
     val s = vm.state
     var showChangePw by remember { mutableStateOf(false) }
     var showLinkEmail by remember { mutableStateOf(false) }
-    var showVoxCpm2Token by remember { mutableStateOf(false) }
-    var voxCpm2Configured by remember { mutableStateOf(false) }
     var currentEmail by remember { mutableStateOf(email ?: "") }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(Unit) {
-        voxCpm2Configured = tokenManager.getVoxCpm2Token() != null
-    }
-
     // Close dialogs on success
     LaunchedEffect(s.linkEmailDone) {
         if (s.linkEmailDone) {
@@ -87,8 +76,6 @@ fun SettingsScreen(
                         HorizontalDivider(color = CardBorder)
                     }
                     SettingsItem(Icons.Default.Lock, "Change Password", "") { showChangePw = true }
-                    HorizontalDivider(color = CardBorder)
-                    SettingsItem(Icons.Default.RecordVoiceOver, "VoxCPM2 External API Token", if (voxCpm2Configured) "External token saved" else "Admin token လိုအပ်သည်") { showVoxCpm2Token = true }
                     HorizontalDivider(color = CardBorder)
                     SettingsItem(Icons.Default.Info, "App Version", "2.2.0") { }
                 }
@@ -156,43 +143,6 @@ fun SettingsScreen(
                             if (s.isLoading) CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                             else Text("Link")
                         }
-                    }
-                }
-            }
-        }
-    }
-
-    // ── VoxCPM2 Token Dialog ──
-    if (showVoxCpm2Token) {
-        var tokenInput by remember { mutableStateOf("") }
-        Dialog(onDismissRequest = { showVoxCpm2Token = false }) {
-            Surface(color = CardBg, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder)) {
-                Column(Modifier.padding(24.dp)) {
-                    Text("VoxCPM2 API Token", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
-                    Spacer(Modifier.height(6.dp))
-                    Text("Cloudflare Admin panel → External API tokens မှ generate လုပ်ထားသော VOICE_CLONE_API_TOKEN raw token ကို ထည့်ပါ။ Bearer prefix ပါလည်း app က အလိုအလျောက်ဖယ်ပြီး ဒီ device ထဲတွင်သာ သိမ်းထားမည်။", fontSize = 12.sp, color = TextDim)
-                    Spacer(Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = tokenInput,
-                        onValueChange = { tokenInput = it },
-                        label = { Text("Access token", fontSize = 13.sp) },
-                        placeholder = { Text("Admin panel မှ copy လုပ်ထားသော raw token", fontSize = 11.sp) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Rose, unfocusedBorderColor = CardBorder, cursorColor = Rose, focusedLabelColor = Rose, unfocusedLabelColor = TextDim),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = { scope.launch { tokenManager.clearVoxCpm2Token(); voxCpm2Configured = false; showVoxCpm2Token = false } },
-                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, ErrorRed.copy(.6f)),
-                        ) { Text("ဖယ်ရှား", color = ErrorRed, fontSize = 12.sp) }
-                        Button(
-                            onClick = { scope.launch { tokenManager.saveVoxCpm2Token(tokenInput); voxCpm2Configured = tokenManager.getVoxCpm2Token() != null; showVoxCpm2Token = false } },
-                            modifier = Modifier.weight(1f), enabled = tokenInput.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Rose), shape = RoundedCornerShape(10.dp),
-                        ) { Text("သိမ်းရန်") }
                     }
                 }
             }
