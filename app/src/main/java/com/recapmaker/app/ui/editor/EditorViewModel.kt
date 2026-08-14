@@ -32,6 +32,12 @@ import java.io.FileOutputStream
 import java.util.UUID
 import javax.inject.Inject
 
+data class VoxCpmVoiceSample(val id: String, val label: String, val description: String)
+
+val builtInVoxCpmSamples = listOf(
+    VoxCpmVoiceSample("anut_khway_mu", "ကိုအန့်ခေတ်မှူး", "Built-in voice sample"),
+)
+
 data class EditorState(
     val gold: Int = 0, val silver: Int = 0, val pricingTiers: List<PricingTier> = emptyList(),
     val videoUri: Uri? = null, val videoLocalPath: String? = null, val videoFilename: String? = null, val videoDuration: Int = 0,
@@ -55,6 +61,7 @@ data class EditorState(
     val subtitleEnabled: Boolean = false, val subtitleText: String = "",
     val useEdgeTts: Boolean = false, val edgeTtsAvailable: Boolean = false,
     val useVoxCpm: Boolean = false, val voxcpmReferencePath: String? = null, val voxcpmReferenceName: String? = null,
+    val voxcpmSampleSource: String? = null,
 )
 
 
@@ -73,6 +80,7 @@ class EditorViewModel @Inject constructor(
             useVoxCpm = prefs.getBoolean("enabled", false),
             voxcpmReferencePath = reference,
             voxcpmReferenceName = prefs.getString("reference_name", null),
+            voxcpmSampleSource = prefs.getString("sample_source", null),
         )
     }
 
@@ -112,7 +120,7 @@ class EditorViewModel @Inject constructor(
     fun setWmBox(v: Boolean) { state = state.copy(wmBox = v) }
     fun setWmBoxOpacity(v: Float) { state = state.copy(wmBoxOpacity = v) }
     fun setAiText(v: String) { state = state.copy(aiText = v) }
-    fun selectVoice(n: String) { val v = VoiceData.allVoices.find { it.name == n } ?: return; state = state.copy(selectedVoice = n, voiceTab = if (v.provider == VoiceProvider.Google) "google" else "microsoft") }
+    fun selectVoice(n: String) { val v = VoiceData.allVoices.find { it.name == n } ?: return; state = state.copy(selectedVoice = n, voiceTab = if (v.provider == VoiceProvider.Google) "google" else "microsoft", useVoxCpm = false, useEdgeTts = false) }
     fun switchVoiceTab(t: String) { state = state.copy(voiceTab = t, voiceSearch = "") }
     fun setVoiceSearch(q: String) { state = state.copy(voiceSearch = q) }
 
@@ -170,6 +178,20 @@ class EditorViewModel @Inject constructor(
             .edit().putBoolean("enabled", v).apply()
     }
 
+    fun setProvider(provider: String) {
+        when (provider) {
+            "voxcpm" -> setUseVoxCpm(true)
+            "edge" -> {
+                if (state.edgeTtsAvailable) setUseEdgeTts(true)
+                else state = state.copy(error = "Edge TTS မရနိုင်ပါ")
+            }
+            "google" -> {
+                state = state.copy(useVoxCpm = false, useEdgeTts = false, voiceTab = "google", voiceSearch = "")
+                appContext.getSharedPreferences("voxcpm", Context.MODE_PRIVATE).edit().putBoolean("enabled", false).apply()
+            }
+        }
+    }
+
     fun onVoxCpmReferenceSelected(uri: Uri, context: Context) {
         viewModelScope.launch {
             val dir = File(context.filesDir, "voxcpm").apply { mkdirs() }
@@ -201,19 +223,42 @@ class EditorViewModel @Inject constructor(
                 return@launch
             }
             state.voxcpmReferencePath?.let { old -> runCatching { File(old).delete() } }
-            state = state.copy(voxcpmReferencePath = target.absolutePath, voxcpmReferenceName = displayName, error = null)
+            state = state.copy(voxcpmReferencePath = target.absolutePath, voxcpmReferenceName = displayName, voxcpmSampleSource = "custom", error = null)
             context.getSharedPreferences("voxcpm", Context.MODE_PRIVATE).edit()
                 .putString("reference_path", target.absolutePath)
                 .putString("reference_name", displayName)
+                .putString("sample_source", "custom")
+                .apply()
+        }
+    }
+
+    fun selectVoxCpmBuiltIn(id: String, context: Context) {
+        val sample = builtInVoxCpmSamples.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            val target = File(context.filesDir, "voxcpm/prebuilt_${sample.id}.mp3").apply { parentFile?.mkdirs() }
+            runCatching {
+                context.resources.openRawResource(com.recapmaker.app.R.raw.ko_anut_khway_mu).use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+            }.onFailure {
+                state = state.copy(error = "Pre-built voice sample ဖတ်မရပါ")
+                return@launch
+            }
+            state.voxcpmReferencePath?.takeIf { it != target.absolutePath }?.let { old -> runCatching { File(old).delete() } }
+            state = state.copy(voxcpmReferencePath = target.absolutePath, voxcpmReferenceName = sample.label, voxcpmSampleSource = "prebuilt:$id", error = null)
+            appContext.getSharedPreferences("voxcpm", Context.MODE_PRIVATE).edit()
+                .putString("reference_path", target.absolutePath)
+                .putString("reference_name", sample.label)
+                .putString("sample_source", "prebuilt:$id")
                 .apply()
         }
     }
 
     fun removeVoxCpmReference(context: Context) {
         state.voxcpmReferencePath?.let { runCatching { File(it).delete() } }
-        state = state.copy(voxcpmReferencePath = null, voxcpmReferenceName = null)
+        state = state.copy(voxcpmReferencePath = null, voxcpmReferenceName = null, voxcpmSampleSource = null)
         context.getSharedPreferences("voxcpm", Context.MODE_PRIVATE).edit()
-            .remove("reference_path").remove("reference_name").apply()
+            .remove("reference_path").remove("reference_name").remove("sample_source").apply()
     }
 
     // ═══ AI ═══

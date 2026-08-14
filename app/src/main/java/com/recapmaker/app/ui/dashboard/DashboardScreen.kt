@@ -29,9 +29,9 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
     var showCheckin by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(DarkBg).verticalScroll(rememberScrollState())) {
-        Box(modifier = Modifier.fillMaxWidth().height(320.dp)) {
-            AnimatedGradientBackground(modifier = Modifier.fillMaxSize(), enabled = true)
-            Column(Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
+            AnimatedGradientBackground(modifier = Modifier.matchParentSize(), enabled = true)
+            Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                 // ── Top bar ──
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -71,7 +71,8 @@ fun DashboardScreen(vm: DashboardViewModel, onEditor: () -> Unit, onSubtitle: ()
                     colors = ButtonDefaults.buttonColors(containerColor = if (s.checkedInToday) CardBorder else Emerald),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text(if (s.checkedInToday) "✅ Done" else "🥈 Claim", color = if (s.checkedInToday) TextDim else DarkBg)
+                    if (s.isLoading) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = if (s.checkedInToday) TextDim else DarkBg, strokeWidth = 2.dp)
+                    else Text(if (s.checkedInToday) "✅ Done" else "🥈 Claim", color = if (s.checkedInToday) TextDim else DarkBg)
                 }
             }
         }

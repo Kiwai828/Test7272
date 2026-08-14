@@ -8,11 +8,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -23,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -121,58 +117,115 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
 
                 // ═══ 5. AI VOICE ═══
                 SectionCard("AI အသံထပ်ခြင်း", Icons.Default.RecordVoiceOver, Purple) {
-                    OutlinedTextField(s.aiText, { vm.setAiText(it) }, Modifier.fillMaxWidth().heightIn(min = 80.dp), placeholder = { Text("AI Script...", fontSize = 13.sp) }, maxLines = 6, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple), shape = RoundedCornerShape(12.dp))
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton({ vm.analyzeScript(ctx) }, enabled = !s.isAnalyzing && s.videoLocalPath != null, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.3f)), modifier = Modifier.weight(1f)) { if (s.isAnalyzing && s.processStatus.isNotBlank()) CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Emerald, strokeWidth = 2.dp) else Icon(Icons.Default.GraphicEq, null, modifier = Modifier.size(14.dp), tint = Emerald); Spacer(Modifier.width(4.dp)); Text("Auto Analyze", fontSize = 11.sp, color = Emerald) }
-                        OutlinedButton({ vm.translateScript() }, enabled = !s.isAnalyzing && s.aiText.isNotBlank(), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Purple.copy(.3f)), modifier = Modifier.weight(1f)) { Icon(Icons.Default.Translate, null, modifier = Modifier.size(14.dp), tint = Purple); Spacer(Modifier.width(4.dp)); Text("ဘာသာပြန်", fontSize = 11.sp, color = Purple) }
-                    }
-                    AnimatedVisibility(s.isAnalyzing && s.processStatus.isNotBlank()) { Text(s.processStatus, color = TextDim, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
+                    OutlinedTextField(
+                        value = s.aiText,
+                        onValueChange = { vm.setAiText(it) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                        placeholder = { Text("AI Script ရိုက်ထည့်ပါ...", fontSize = 13.sp, color = TextDim) },
+                        maxLines = 7,
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple, unfocusedBorderColor = CardBorder, cursorColor = Purple),
+                        shape = RoundedCornerShape(12.dp),
+                    )
                     Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Mic, null, modifier = Modifier.size(16.dp), tint = Purple); Spacer(Modifier.width(6.dp)); Text("Voice", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary); if (s.selectedVoice.isNotEmpty()) { Spacer(Modifier.width(6.dp)); Surface(color = Purple.copy(.15f), shape = RoundedCornerShape(10.dp)) { Text(s.selectedVoice, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Purple, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) } } }
-                    Spacer(Modifier.height(6.dp))
-                    VoiceTabRow(listOf("google" to "🔷 Google PREMIUM", "microsoft" to "🟢 Microsoft FREE"), s.voiceTab) { vm.switchVoiceTab(it) }
-                    if (s.edgeTtsAvailable) {
-                        Spacer(Modifier.height(6.dp))
-                        EffectToggle("Microsoft FREE — Edge TTS", Icons.Default.OfflineBolt, s.useEdgeTts, Cyan) { vm.setUseEdgeTts(it) }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    EffectToggle("VoxCPM TTS / Voice Clone (online)", Icons.Default.RecordVoiceOver, s.useVoxCpm, Rose) { vm.setUseVoxCpm(it) }
-                    AnimatedVisibility(s.useVoxCpm) {
-                        Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("စာသားကို VoxCPM သို့ပို့ပြီး အသံဖန်တီးမည်။ Voice clone အတွက် sample သည် 50 seconds အောက်ဖြစ်ရမည်။", color = TextDim, fontSize = 10.sp)
-                            OutlinedButton(
-                                onClick = { voxcpmReferencePicker.launch("audio/*") },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, if (s.voxcpmReferencePath != null) Emerald.copy(.35f) else Rose.copy(.3f)),
-                            ) {
-                                Icon(if (s.voxcpmReferencePath != null) Icons.Default.CheckCircle else Icons.Default.AudioFile, null, tint = if (s.voxcpmReferencePath != null) Emerald else Rose, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(s.voxcpmReferenceName ?: "Voice sample ထည့်ရန် (optional)", color = if (s.voxcpmReferencePath != null) Emerald else TextPrimary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            if (s.voxcpmReferencePath != null) {
-                                TextButton(onClick = { vm.removeVoxCpmReference(ctx) }) {
-                                    Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Voice sample ဖယ်ရှားရန်", color = ErrorRed, fontSize = 11.sp)
-                                }
-                            }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton({ vm.analyzeScript(ctx) }, enabled = !s.isAnalyzing && s.videoLocalPath != null, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Emerald.copy(.45f)), modifier = Modifier.weight(1f)) {
+                            if (s.isAnalyzing) CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Emerald, strokeWidth = 2.dp) else Icon(Icons.Default.GraphicEq, null, modifier = Modifier.size(14.dp), tint = Emerald)
+                            Spacer(Modifier.width(4.dp)); Text("Auto Analyze", fontSize = 11.sp, color = Emerald)
+                        }
+                        OutlinedButton({ vm.translateScript() }, enabled = !s.isAnalyzing && s.aiText.isNotBlank(), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Purple.copy(.45f)), modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Translate, null, modifier = Modifier.size(14.dp), tint = Purple); Spacer(Modifier.width(4.dp)); Text("ဘာသာပြန်", fontSize = 11.sp, color = Purple)
                         }
                     }
-                    OutlinedTextField(s.voiceSearch, { vm.setVoiceSearch(it) }, Modifier.fillMaxWidth(), placeholder = { Text("Search...", fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp), tint = TextDim) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple.copy(.3f), unfocusedBorderColor = Purple.copy(.09f), cursorColor = Purple), shape = RoundedCornerShape(11.dp))
+                    AnimatedVisibility(s.isAnalyzing && s.processStatus.isNotBlank()) { Text(s.processStatus, color = TextMid, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp)) }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Voice engine", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextMid)
                     Spacer(Modifier.height(6.dp))
-                    val voices = vm.filteredVoices
-                    if (voices.isEmpty()) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { Text("Not found", color = TextDim) }
-                    else LazyVerticalGrid(columns = GridCells.Fixed(2), Modifier.fillMaxWidth().heightIn(max = 260.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { items(voices, key = { it.name }) { v -> VoiceCard(v.name, v.label, v.gender, s.selectedVoice == v.name, { vm.selectVoice(v.name) }) } }
-                    if (s.voiceTab == "google" && s.aiText.isNotBlank()) { Spacer(Modifier.height(4.dp)); Surface(color = WarningYellow.copy(.08f), shape = RoundedCornerShape(8.dp)) { Text("⚠ Google Voice → Gold Coins", color = WarningYellow, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) } }
-                    if (s.voiceTab == "microsoft" && s.edgeTtsAvailable) { Spacer(Modifier.height(4.dp)); Surface(color = Cyan.copy(.08f), shape = RoundedCornerShape(8.dp)) { Text(if (s.useEdgeTts) "✅ Edge TTS ဖွင့်ထားသည် — အခမဲ့" else "🔷 Edge TTS Local Mode", color = Cyan, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) } }
+                    val activeProvider = when { s.useVoxCpm -> "voxcpm"; s.useEdgeTts -> "edge"; else -> "google" }
+                    ProviderOption("Google TTS", "Premium voice • Gold coins", Icons.Default.AutoAwesome, activeProvider == "google", Purple) { vm.setProvider("google") }
+                    Spacer(Modifier.height(6.dp))
+                    if (s.edgeTtsAvailable) {
+                        ProviderOption("Edge TTS", "Microsoft voice • Free", Icons.Default.OfflineBolt, activeProvider == "edge", Cyan) { vm.setProvider("edge") }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    ProviderOption("VoxCPM", "TTS + Voice Clone • Online", Icons.Default.RecordVoiceOver, activeProvider == "voxcpm", Rose) { vm.setProvider("voxcpm") }
+
+                    AnimatedVisibility(activeProvider == "voxcpm") {
+                        Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(color = Rose.copy(.08f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.22f))) {
+                                Text("VoxCPM ကိုရွေးထားသောကြောင့် Google/Edge voice controls များကို ဖျောက်ထားသည်။ TTS သို့မဟုတ် Voice Clone နှစ်မျိုးလုံး သုံးနိုင်သည်။", color = TextPrimary, fontSize = 11.sp, modifier = Modifier.padding(10.dp))
+                            }
+                            Text("Voice sample ရွေးချယ်ရန်", color = TextMid, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            builtInVoxCpmSamples.forEach { sample ->
+                                val selected = s.voxcpmSampleSource == "prebuilt:${sample.id}"
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable { vm.selectVoxCpmBuiltIn(sample.id, ctx) },
+                                    color = if (selected) Emerald.copy(.09f) else SurfaceDark,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, if (selected) Emerald.copy(.55f) else CardBorder),
+                                ) {
+                                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.LibraryMusic, null, tint = if (selected) Emerald else TextMid, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(Modifier.weight(1f)) { Text(sample.label, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text(sample.description, color = TextMid, fontSize = 10.sp) }
+                                        if (selected) Icon(Icons.Default.CheckCircle, null, tint = Emerald, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                            OutlinedButton({ voxcpmReferencePicker.launch("audio/*") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, if (s.voxcpmSampleSource == "custom") Emerald.copy(.55f) else Rose.copy(.4f))) {
+                                Icon(if (s.voxcpmSampleSource == "custom") Icons.Default.CheckCircle else Icons.Default.UploadFile, null, tint = if (s.voxcpmSampleSource == "custom") Emerald else Rose, modifier = Modifier.size(17.dp))
+                                Spacer(Modifier.width(7.dp)); Text(if (s.voxcpmSampleSource == "custom") "Custom: ${s.voxcpmReferenceName}" else "ကိုယ်ပိုင် voice sample ရွေးရန်", color = if (s.voxcpmSampleSource == "custom") Emerald else TextPrimary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (s.voxcpmReferencePath != null) TextButton({ vm.removeVoxCpmReference(ctx) }, modifier = Modifier.align(Alignment.End)) { Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("Sample ဖယ်ရှားရန်", color = ErrorRed, fontSize = 11.sp) }
+                            Text("Reference audio သည် 50 seconds အောက်ဖြစ်ရမည်။ Sample မရွေးလည်း VoxCPM TTS သုံးနိုင်သည်။", color = TextMid, fontSize = 10.sp)
+                        }
+                    }
+
+                    AnimatedVisibility(activeProvider != "voxcpm") {
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Spacer(Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Mic, null, modifier = Modifier.size(16.dp), tint = Purple); Spacer(Modifier.width(6.dp)); Text("Built-in voice", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = TextMid) }
+                            VoiceTabRow(listOf("google" to "Google voices", "microsoft" to "Microsoft voices"), s.voiceTab) { vm.switchVoiceTab(it) }
+                            OutlinedTextField(s.voiceSearch, { vm.setVoiceSearch(it) }, Modifier.fillMaxWidth(), placeholder = { Text("Voice search...", fontSize = 12.sp, color = TextDim) }, leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp), tint = TextMid) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Purple.copy(.55f), unfocusedBorderColor = CardBorder, cursorColor = Purple), shape = RoundedCornerShape(10.dp))
+                            val voices = vm.filteredVoices
+                            if (voices.isEmpty()) Text("Voice မတွေ့ပါ", color = TextMid, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
+                            else voices.chunked(2).forEach { row ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    row.forEach { v -> VoiceCard(v.name, v.label, v.gender, s.selectedVoice == v.name, { vm.selectVoice(v.name) }, Modifier.weight(1f)) }
+                                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
+                            if (activeProvider == "google" && s.aiText.isNotBlank()) Surface(color = WarningYellow.copy(.09f), shape = RoundedCornerShape(8.dp)) { Text("Google TTS → Gold coins", color = WarningYellow, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) }
+                            if (activeProvider == "edge") Surface(color = Cyan.copy(.09f), shape = RoundedCornerShape(8.dp)) { Text("Edge TTS → Free", color = Cyan, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) }
+                        }
+                    }
                 }
 
-                // ═══ 5-A. VIDEO EFFECTS ═══
+@Composable
+private fun ProviderOption(title: String, subtitle: String, icon: ImageVector, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        color = if (selected) accent.copy(.10f) else SurfaceDark,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, if (selected) accent.copy(.65f) else CardBorder),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = if (selected) accent else TextMid, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, color = TextMid, fontSize = 10.sp)
+            }
+            if (selected) Icon(Icons.Default.RadioButtonChecked, null, tint = accent, modifier = Modifier.size(19.dp))
+            else Icon(Icons.Default.RadioButtonUnchecked, null, tint = TextDim, modifier = Modifier.size(19.dp))
+        }
+    }
+}
+
+// ═══ 5-A. VIDEO EFFECTS ═══
+
                 val ve = s.videoEffects
                 SectionCard("Video Effects", Icons.Default.Tune, Purple) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         EffectToggle("Grayscale", Icons.Default.BlurOn, ve.grayscale, Rose) { vm.setVideoEffectGrayscale(it) }
                         EffectToggle("Sepia", Icons.Default.BlurOn, ve.sepia, Gold) { vm.setVideoEffectSepia(it) }
                         EffectToggle("Vignette", Icons.Default.BlurOn, ve.vignette, Purple) { vm.setVideoEffectVignette(it) }
@@ -214,7 +267,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                 // ═══ 5-C. AUDIO EFFECTS ═══
                 val ae = s.audioEffects
                 SectionCard("Audio Effects", Icons.Default.GraphicEq, Purple) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         EffectToggle("Echo", Icons.Default.GraphicEq, ae.echo, Cyan) { vm.setAudioEffectEcho(it) }
                         EffectToggle("Reverb", Icons.Default.GraphicEq, ae.reverb, Rose) { vm.setAudioEffectReverb(it) }
                         EffectToggle("Bass Boost", Icons.Default.GraphicEq, ae.bassBoost, Gold) { vm.setAudioEffectBassBoost(it) }
@@ -278,8 +331,8 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
 
                 // ═══ 6. PROCESS ═══
                 if (s.isProcessing) { Surface(color = Purple.copy(.08f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Purple.copy(.2f))) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Purple, strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(s.processStatus.ifBlank { "Processing..." }, color = TextPrimary, fontSize = 13.sp) } } }
-                PrimaryButton(text = if (s.isProcessing) "Processing..." else "စတင်ပြုပြင်မည် ${vm.costText}", onClick = { vm.startProcessing(ctx) }, loading = s.isProcessing, color = Emerald, enabled = s.videoLocalPath != null)
-                Spacer(Modifier.height(24.dp))
+                PrimaryButton(text = if (s.isProcessing) "Processing..." else "စတင်ပြုပြင်မည် ${vm.costText}", onClick = { vm.startProcessing(ctx) }, loading = s.isProcessing, modifier = Modifier.navigationBarsPadding(), color = Emerald, enabled = s.videoLocalPath != null)
+                Spacer(Modifier.height(40.dp).navigationBarsPadding())
             }
         }
 
