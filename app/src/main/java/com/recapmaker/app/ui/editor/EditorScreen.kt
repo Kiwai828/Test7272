@@ -8,6 +8,8 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -200,27 +202,6 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     }
                 }
 
-@Composable
-private fun ProviderOption(title: String, subtitle: String, icon: ImageVector, selected: Boolean, accent: Color, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable { onClick() },
-        color = if (selected) accent.copy(.10f) else SurfaceDark,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, if (selected) accent.copy(.65f) else CardBorder),
-    ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = if (selected) accent else TextMid, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, color = TextMid, fontSize = 10.sp)
-            }
-            if (selected) Icon(Icons.Default.RadioButtonChecked, null, tint = accent, modifier = Modifier.size(19.dp))
-            else Icon(Icons.Default.RadioButtonUnchecked, null, tint = TextDim, modifier = Modifier.size(19.dp))
-        }
-    }
-}
-
 // ═══ 5-A. VIDEO EFFECTS ═══
 
                 val ve = s.videoEffects
@@ -408,5 +389,27 @@ private fun ProviderOption(title: String, subtitle: String, icon: ImageVector, s
             }
         }
     }
+    }
+}
+
+
+@Composable
+private fun ProviderOption(title: String, subtitle: String, icon: ImageVector, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        color = if (selected) accent.copy(.10f) else SurfaceDark,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, if (selected) accent.copy(.65f) else CardBorder),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = if (selected) accent else TextMid, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, color = TextMid, fontSize = 10.sp)
+            }
+            if (selected) Icon(Icons.Default.RadioButtonChecked, null, tint = accent, modifier = Modifier.size(19.dp))
+            else Icon(Icons.Default.RadioButtonUnchecked, null, tint = TextDim, modifier = Modifier.size(19.dp))
+        }
     }
 }
