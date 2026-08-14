@@ -294,15 +294,14 @@ class EditorViewModel @Inject constructor(
             // ── 1. VoxCPM2 configuration preflight before any coin deduction ──
             val voxCpm2Token = if (state.useVoxCpm && normalizedText.isNotBlank()) {
                 state = state.copy(processStatus = "VoxCPM2 authentication စစ်ဆေးနေသည်...")
-                (tokenManager.getVoxCpm2Token() ?: tokenManager.getToken()).orEmpty()
+                tokenManager.getVoxCpm2Token().orEmpty()
             } else ""
-            if (state.useVoxCpm && normalizedText.isNotBlank() && !VoxCpmClient.isAvailable(voxCpm2Token)) {
-                state = state.copy(
-                    isProcessing = false,
-                    processStatus = "",
-                    error = "VoxCPM2 access token မတွေ့ပါ။ App account ဖြင့် ပြန်ဝင်ပြီး စမ်းပါ။",
-                )
-                return@launch
+            if (state.useVoxCpm && normalizedText.isNotBlank()) {
+                val preflightError = VoxCpmClient.preflight(voxCpm2Token)
+                if (preflightError != null) {
+                    state = state.copy(isProcessing = false, processStatus = "", error = preflightError)
+                    return@launch
+                }
             }
 
             // ── 2. Coins ──

@@ -24,13 +24,26 @@ class TokenManager @Inject constructor(@ApplicationContext private val context: 
     val isLoggedIn: Flow<Boolean> = tokenFlow.map { !it.isNullOrEmpty() }
     suspend fun getToken(): String? = tokenFlow.first()
     suspend fun getUsername(): String? = context.dataStore.data.first()[KEY_USERNAME]
-    suspend fun getVoxCpm2Token(): String? = context.dataStore.data.first()[KEY_VOXCPM2_TOKEN]?.trim()?.takeIf { it.isNotEmpty() }
+    suspend fun getVoxCpm2Token(): String? = normalizeVoiceToken(context.dataStore.data.first()[KEY_VOXCPM2_TOKEN])
     suspend fun saveToken(token: String, username: String = "") {
         context.dataStore.edit { it[KEY_TOKEN] = token; if (username.isNotEmpty()) it[KEY_USERNAME] = username }
     }
     suspend fun saveVoxCpm2Token(token: String) {
-        context.dataStore.edit { it[KEY_VOXCPM2_TOKEN] = token.trim() }
+        val normalized = normalizeVoiceToken(token) ?: return
+        context.dataStore.edit { it[KEY_VOXCPM2_TOKEN] = normalized }
     }
     suspend fun clearVoxCpm2Token() { context.dataStore.edit { it.remove(KEY_VOXCPM2_TOKEN) } }
+
+    private fun normalizeVoiceToken(raw: String?): String? {
+        var token = raw?.trim().orEmpty()
+        if (token.startsWith("Authorization:", ignoreCase = true)) {
+            token = token.substringAfter(':').trim()
+        }
+        if (token.startsWith("Bearer ", ignoreCase = true)) {
+            token = token.substring(7).trim()
+        }
+        token = token.replace(Regex("\\s+"), "")
+        return token.takeIf { it.isNotEmpty() }
+    }
     suspend fun clear() { context.dataStore.edit { it.clear() } }
 }

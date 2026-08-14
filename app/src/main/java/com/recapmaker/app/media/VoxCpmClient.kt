@@ -42,25 +42,35 @@ object VoxCpmClient {
     fun isConfigured(accessToken: String?): Boolean = !accessToken.isNullOrBlank()
 
     /**
-     * Authenticated, non-generating preflight. An empty body is rejected by the
-     * API with 422 after authentication, which is a safe way to verify the
-     * bearer token without invoking Modal inference or charging provider credits.
+     * Authenticated, non-generating preflight. The empty JSON body is rejected
+     * with 422 after authentication, so this verifies the External API token
+     * without invoking Modal inference or charging provider credits.
+     *
+     * @return null when authentication/service validation is acceptable; an
+     * actionable Burmese error otherwise.
      */
-    suspend fun isAvailable(accessToken: String?): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured(accessToken)) return@withContext false
+    suspend fun preflight(accessToken: String?): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured(accessToken)) {
+            return@withContext "Cloudflare External API token မထည့်ရသေးပါ။ Settings → VoxCPM2 API Token ထဲတွင် raw token ထည့်ပါ။"
+        }
         runCatching {
             val request = Request.Builder()
                 .url(BASE_URL + GENERATE_ENDPOINT)
                 .header("Authorization", "Bearer ${accessToken!!.trim()}")
+                .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .header("Idempotency-Key", "preflight-${UUID.randomUUID()}")
                 .post("{}".toRequestBody(jsonMediaType))
                 .build()
             http.newCall(request).execute().use { response ->
-                response.code == 422 || response.isSuccessful
+                val body = response.body?.string().orEmpty()
+                if (response.code == 422 || response.isSuccessful) null
+                else parseAuthError(response.code, body)
             }
-        }.getOrDefault(false)
+        }.getOrElse { e -> "VoxCPM2 API သို့ ဆက်သွယ်မရပါ: ${e.message ?: "network error"}" }
     }
+
+    suspend fun isAvailable(accessToken: String?): Boolean = preflight(accessToken) == null
 
     suspend fun generate(
         context: Context,
@@ -75,7 +85,7 @@ object VoxCpmClient {
     ): Result<File> = withContext(Dispatchers.IO) {
         if (text.isBlank()) return@withContext Result.Error("VoxCPM2 သို့ပို့ရန် စာသားမရှိပါ")
         if (!isConfigured(accessToken)) {
-            return@withContext Result.Error("VoxCPM2 access token မတွေ့ပါ။ App account ဖြင့် ပြန်ဝင်ပြီး စမ်းပါ")
+            return@withContext Result.Error("Cloudflare External API token မထည့်ရသေးပါ။ Settings → VoxCPM2 API Token ထဲတွင် raw token ထည့်ပါ။")
         }
         if (!referenceAudio.exists() || referenceAudio.length() == 0L) {
             return@withContext Result.Error("VoxCPM2 voice sample မတွေ့ပါ")
@@ -188,6 +198,18 @@ object VoxCpmClient {
     private fun shellQuote(path: String): String = "'" + path.replace("'", "'\\''") + "'"
 
     private fun isRetryable(code: Int): Boolean = code == 429 || code == 502 || code == 503 || code == 504
+
+    private fun parseAuthError(code: Int, body: String): String {
+        val detail = parseError(code, body)
+        return when (code) {
+            401 -> "Cloudflare External API token မမှန်ပါ သို့မဟုတ် သက်တမ်းကုန်ပါပြီ။ Admin panel → External API tokens မှ raw token အသစ်ထည့်ပါ။ ($detail)"
+            402 -> "Cloudflare VoxCPM2 credit မလုံလောက်ပါ။ ($detail)"
+            422 -> "VoxCPM2 request validation မအောင်မြင်ပါ။ ($detail)"
+            429 -> "VoxCPM2 rate limit/provider capacity ဖြစ်နေပါသည်။ ခဏစောင့်ပြီး ပြန်စမ်းပါ။ ($detail)"
+            502, 503, 504 -> "VoxCPM2 relay service ခဏမရနိုင်ပါ။ ($detail)"
+            else -> detail
+        }
+    }
 
     private fun parseError(code: Int, body: String): String {
         val fallback = "HTTP $code: ${body.take(MAX_ERROR_BODY).ifBlank { "service error" }}"
