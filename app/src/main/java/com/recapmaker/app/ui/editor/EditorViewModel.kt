@@ -510,16 +510,8 @@ class EditorViewModel @Inject constructor(
             .trim()
     }
 
-    /** Hugging Face VoxCPM counts raw code points; remove whitespace before chunking and sending. */
-    private fun normalizeVoxCpmText(raw: String): String {
-        val nfc = Normalizer.normalize(raw, Normalizer.Form.NFC)
-        return nfc.filterNot {
-            it.isWhitespace() ||
-                it.code == 0x00A0 ||
-                it.category == kotlin.text.CharCategory.FORMAT ||
-                it.category == kotlin.text.CharCategory.CONTROL
-        }
-    }
+    /** Preserve normal word spacing; remove invisible/control characters and collapse line breaks. */
+    private fun normalizeVoxCpmText(raw: String): String = normalizeTtsText(raw)
 
     /** Split normalized text into chunks without cutting Burmese words or punctuation. */
     private fun splitTextIntoChunks(text: String, maxLen: Int): List<String> {

@@ -154,7 +154,7 @@ fun EditorScreen(onBack: () -> Unit, vm: EditorViewModel = hiltViewModel()) {
                     AnimatedVisibility(activeProvider == "voxcpm") {
                         Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Surface(color = Rose.copy(.08f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Rose.copy(.22f))) {
-                                Text("VoxCPM2 ကိုရွေးထားသောကြောင့် Google/Edge voice controls များကို ဖျောက်ထားသည်။ Hugging Face VoxCPM Space ကို ခေါ်ပြီး TTS + Voice Clone ပြုလုပ်မည်။ Space limit အတွက် space များဖယ်ပြီး စာတစ်ပိုင်းလျှင် စာလုံး 500 အထိ ခွဲပို့မည်။", color = TextPrimary, fontSize = 11.sp, modifier = Modifier.padding(10.dp))
+                                Text("VoxCPM2 ကိုရွေးထားသောကြောင့် Google/Edge voice controls များကို ဖျောက်ထားသည်။ Hugging Face VoxCPM Space ကို ခေါ်ပြီး TTS + Voice Clone ပြုလုပ်မည်။ စာသားထဲက ပုံမှန် space များကို မဖယ်ဘဲ line break/invisible characters များကိုသာ normalize လုပ်ပြီး စာတစ်ပိုင်းလျှင် စာလုံး 500 အထိ ခွဲပို့မည်။", color = TextPrimary, fontSize = 11.sp, modifier = Modifier.padding(10.dp))
                             }
                             Text("VoxCPM2 voice sample ရွေးချယ်ရန် (လိုအပ်သည်)", color = TextMid, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             builtInVoxCpmSamples.forEach { sample ->
