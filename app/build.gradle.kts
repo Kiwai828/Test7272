@@ -18,9 +18,10 @@ android {
         applicationId = "com.recapmaker.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.2.0"
+        versionCode = 3
+        versionName = "2.3.0-hf"
         buildConfigField("String", "API_BASE_URL", "\"https://zzzzz-mu.vercel.app\"")
+        buildConfigField("String", "VOICE_PROVIDER_BUILD", "\"HF_GRADIO_ONLY\"")
     }
 
     // Only create the release signingConfig when a keystore is actually present.
