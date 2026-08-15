@@ -289,9 +289,9 @@ class EditorViewModel @Inject constructor(
             }
             state = state.copy(aiText = normalizedText)
 
-            // ── 1. Direct Modal health preflight before any coin deduction ──
+            // ── 1. Hugging Face Space preflight before any coin deduction ──
             if (state.useVoxCpm && normalizedText.isNotBlank()) {
-                state = state.copy(processStatus = "Modal VoxCPM2 health စစ်ဆေးနေသည်...")
+                state = state.copy(processStatus = "Hugging Face VoxCPM Space စစ်ဆေးနေသည်...")
                 val preflightError = VoxCpmClient.preflight()
                 if (preflightError != null) {
                     state = state.copy(isProcessing = false, processStatus = "", error = preflightError)
@@ -329,7 +329,7 @@ class EditorViewModel @Inject constructor(
             if (state.aiText.isNotBlank()) {
                 ttsAudioPath = when {
                     state.useVoxCpm -> {
-                        state = state.copy(processStatus = "Direct Modal VoxCPM2 voice generating...")
+                        state = state.copy(processStatus = "Hugging Face VoxCPM voice generating...")
                         generateVoxCpmAudio(context)
                     }
                     state.useEdgeTts && state.edgeTtsAvailable -> {
@@ -510,6 +510,17 @@ class EditorViewModel @Inject constructor(
             .trim()
     }
 
+    /** Hugging Face VoxCPM counts raw code points; remove whitespace before chunking and sending. */
+    private fun normalizeVoxCpmText(raw: String): String {
+        val nfc = Normalizer.normalize(raw, Normalizer.Form.NFC)
+        return nfc.filterNot {
+            it.isWhitespace() ||
+                it.code == 0x00A0 ||
+                it.category == kotlin.text.CharCategory.FORMAT ||
+                it.category == kotlin.text.CharCategory.CONTROL
+        }
+    }
+
     /** Split normalized text into chunks without cutting Burmese words or punctuation. */
     private fun splitTextIntoChunks(text: String, maxLen: Int): List<String> {
         val normalized = normalizeTtsText(text)
@@ -555,36 +566,36 @@ class EditorViewModel @Inject constructor(
     private fun cleanup(vararg paths: String?) { paths.filterNotNull().forEach { try { File(it).delete() } catch (_: Exception) {} } }
 
     private suspend fun generateVoxCpmAudio(context: Context): String? {
-        val normalizedText = normalizeTtsText(state.aiText)
+        val normalizedText = normalizeVoxCpmText(state.aiText)
         if (normalizedText.isBlank()) {
-            state = state.copy(error = "VoxCPM2 သို့ပို့ရန် စာသားမရှိပါ")
+            state = state.copy(error = "VoxCPM သို့ပို့ရန် စာသားမရှိပါ")
             return null
         }
-        state = state.copy(aiText = normalizedText)
         val reference = state.voxcpmReferencePath?.let { File(it) }
         if (reference != null && (!reference.exists() || reference.length() == 0L)) {
-            state = state.copy(error = "VoxCPM2 voice sample မတွေ့ပါ")
+            state = state.copy(error = "VoxCPM voice sample မတွေ့ပါ")
             return null
         }
         val chunks = splitTextIntoChunks(normalizedText, 500)
         val generated = mutableListOf<String>()
         try {
             chunks.forEachIndexed { index, chunk ->
-                state = state.copy(processStatus = "Modal VoxCPM2 generating ${index + 1}/${chunks.size}...")
+                state = state.copy(processStatus = "Hugging Face VoxCPM generating ${index + 1}/${chunks.size}...")
                 when (val result = VoxCpmClient.generate(
                     context = context,
                     text = chunk,
                     referenceAudio = reference ?: run {
-                        state = state.copy(error = "VoxCPM2 voice sample ရွေးပါ")
+                        state = state.copy(error = "VoxCPM voice sample ရွေးပါ")
                         return null
                     },
-                    styleControl = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
+                    controlInstruction = "Natural spoken Burmese narration, clear pronunciation and steady pacing.",
                     cfgValue = 2.0f,
-                    inferenceTimesteps = 10,
+                    normalize = true,
+                    denoise = true,
                 )) {
                     is Result.Success -> generated += result.data.absolutePath
                     is Result.Error -> {
-                                                    state = state.copy(error = "VoxCPM2: ${result.message}")
+                        state = state.copy(error = "Hugging Face VoxCPM: ${result.message}")
 
                         return null
                     }
@@ -596,7 +607,7 @@ class EditorViewModel @Inject constructor(
             return combined
         } catch (e: Exception) {
             generated.forEach { File(it).delete() }
-            state = state.copy(error = "VoxCPM2: ${e.message ?: "generation failed"}")
+            state = state.copy(error = "Hugging Face VoxCPM: ${e.message ?: "generation failed"}")
             return null
         }
     }
