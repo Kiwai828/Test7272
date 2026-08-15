@@ -199,35 +199,43 @@ object VoxCpmClient {
             .get()
             .build()
         http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Hugging Face result stream failed (${response.code})")
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                error("Hugging Face result stream failed (${response.code}): ${body.take(MAX_ERROR_BODY)}")
+            }
+            var lastEvent = ""
             var lastData: JsonElement? = null
-            response.body?.source()?.buffer()?.use { source ->
-                while (!source.exhausted()) {
-                    val line = source.readUtf8Line() ?: break
-                    if (!line.startsWith("data:")) continue
-                    val raw = line.removePrefix("data:").trim()
-                    if (raw.isBlank() || raw == "null") continue
-                    val data = runCatching { JsonParser.parseString(raw) }
-                        .getOrElse { error("Hugging Face event JSON မမှန်ပါ") }
-                    lastData = data
-                    if (data.isJsonPrimitive && data.asJsonPrimitive.isString) {
-                        error("Hugging Face VoxCPM job error: ${data.asString.take(MAX_ERROR_BODY)}")
-                    }
-                    if (data.isJsonObject) {
-                        val message = data.asJsonObject.get("error")?.takeIf { !it.isJsonNull }?.asString
-                        if (!message.isNullOrBlank()) error("Hugging Face VoxCPM job error: ${message.take(MAX_ERROR_BODY)}")
-                    }
-                    if (data.isJsonArray && data.asJsonArray.size() > 0) {
-                        val first = data.asJsonArray[0]
-                        if (first.isJsonObject && (first.asJsonObject.has("path") || first.asJsonObject.has("url"))) return data
-                        if (first.isJsonArray && first.asJsonArray.size() > 0 && first.asJsonArray[0].isJsonObject) {
-                            val nested = first.asJsonArray[0].asJsonObject
-                            if (nested.has("path") || nested.has("url")) return first
+            var audioResult: JsonElement? = null
+            for (line in body.lineSequence()) {
+                val trimmed = line.trim()
+                when {
+                    trimmed.startsWith("event:") -> lastEvent = trimmed.removePrefix("event:").trim()
+                    !trimmed.startsWith("data:") -> Unit
+                    else -> {
+                        val raw = trimmed.removePrefix("data:").trim()
+                        if (raw.isBlank() || raw == "null") continue
+                        val data = runCatching { JsonParser.parseString(raw) }
+                            .getOrElse { error("Hugging Face event JSON မမှန်ပါ: ${raw.take(MAX_ERROR_BODY)}") }
+                        lastData = data
+                        if (data.isJsonPrimitive && data.asJsonPrimitive.isString) {
+                            error("Hugging Face VoxCPM job error: ${data.asString.take(MAX_ERROR_BODY)}")
+                        }
+                        if (data.isJsonObject) {
+                            val message = data.asJsonObject.get("error")?.takeIf { !it.isJsonNull }?.asString
+                            if (!message.isNullOrBlank()) error("Hugging Face VoxCPM job error: ${message.take(MAX_ERROR_BODY)}")
+                        }
+                        if (outputUrl(data) != null) {
+                            audioResult = data
+                            break
                         }
                     }
                 }
             }
-            error("Hugging Face stream ended without audio: ${lastData?.toString()?.take(MAX_ERROR_BODY) ?: "no event data"}")
+            return audioResult ?: error(
+                "Hugging Face stream ended without audio: event=${lastEvent.ifBlank { "unknown" }}; " +
+                    "lastData=${lastData?.toString()?.take(MAX_ERROR_BODY) ?: "none"}; " +
+                    "body=${body.take(MAX_ERROR_BODY)}"
+            )
         }
     }
 

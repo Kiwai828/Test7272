@@ -77,7 +77,7 @@ fun SettingsScreen(
                     }
                     SettingsItem(Icons.Default.Lock, "Change Password", "") { showChangePw = true }
                     HorizontalDivider(color = CardBorder)
-                    SettingsItem(Icons.Default.Info, "App Version", "2.3.0-hf • Hugging Face only") { }
+                    SettingsItem(Icons.Default.Info, "App Version", "2.3.1-hf-sse • Hugging Face only") { }
                 }
             }
 
