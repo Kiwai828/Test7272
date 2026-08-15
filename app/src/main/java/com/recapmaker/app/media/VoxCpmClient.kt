@@ -28,6 +28,8 @@ object VoxCpmClient {
     private const val MAX_TEXT_CHARS = 500
     private const val MAX_ATTEMPTS = 3
     private const val MAX_ERROR_BODY = 320
+    private const val MAX_RESULT_POLLS = 8
+    private const val RESULT_POLL_DELAY_MS = 2000L
     private val gson = Gson()
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -110,7 +112,7 @@ object VoxCpmClient {
         Result.Error("Hugging Face VoxCPM မရနိုင်သေးပါ။ ${MAX_ATTEMPTS} ကြိမ် ပြန်ကြိုးစားပြီးနောက်: $lastError")
     }
 
-    private fun generateOnce(
+    private suspend fun generateOnce(
         context: Context,
         text: String,
         referenceAudio: File?,
@@ -192,51 +194,71 @@ object VoxCpmClient {
         }
     }
 
-    private fun awaitResult(eventId: String): JsonElement {
-        val request = Request.Builder()
-            .url("$BASE_URL$GENERATE_ENDPOINT/$eventId")
-            .header("Accept", "text/event-stream")
-            .get()
-            .build()
-        http.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                error("Hugging Face result stream failed (${response.code}): ${body.take(MAX_ERROR_BODY)}")
-            }
-            var lastEvent = ""
-            var lastData: JsonElement? = null
-            var audioResult: JsonElement? = null
-            for (line in body.lineSequence()) {
-                val trimmed = line.trim()
-                when {
-                    trimmed.startsWith("event:") -> lastEvent = trimmed.removePrefix("event:").trim()
-                    !trimmed.startsWith("data:") -> Unit
-                    else -> {
-                        val raw = trimmed.removePrefix("data:").trim()
-                        if (raw.isBlank() || raw == "null") continue
-                        val data = runCatching { JsonParser.parseString(raw) }
-                            .getOrElse { error("Hugging Face event JSON မမှန်ပါ: ${raw.take(MAX_ERROR_BODY)}") }
-                        lastData = data
-                        if (data.isJsonPrimitive && data.asJsonPrimitive.isString) {
-                            error("Hugging Face VoxCPM job error: ${data.asString.take(MAX_ERROR_BODY)}")
-                        }
-                        if (data.isJsonObject) {
-                            val message = data.asJsonObject.get("error")?.takeIf { !it.isJsonNull }?.asString
-                            if (!message.isNullOrBlank()) error("Hugging Face VoxCPM job error: ${message.take(MAX_ERROR_BODY)}")
-                        }
-                        if (outputUrl(data) != null) {
-                            audioResult = data
-                            break
-                        }
+    /**
+     * Gradio can close a result request before the complete event is visible to a
+     * mobile client. Poll the same event URL a few times and parse the complete
+     * payload, rather than treating one empty response as a failed generation.
+     */
+    private suspend fun awaitResult(eventId: String): JsonElement {
+        var lastDiagnostic = "no event data"
+        for (attempt in 0 until MAX_RESULT_POLLS) {
+            try {
+                val request = Request.Builder()
+                    .url("$BASE_URL$GENERATE_ENDPOINT/$eventId?poll=$attempt-${System.currentTimeMillis()}")
+                    .header("Accept", "text/event-stream, application/json")
+                    .header("Cache-Control", "no-cache")
+                    .header("Pragma", "no-cache")
+                    .get()
+                    .build()
+                http.newCall(request).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        error("Hugging Face result stream failed (${response.code}): ${body.take(MAX_ERROR_BODY)}")
                     }
+                    val parsed = parseSseBody(body)
+                    if (parsed != null) return parsed
+                    lastDiagnostic = sseDiagnostic(body)
+                }
+            } catch (e: Exception) {
+                lastDiagnostic = e.message ?: e.javaClass.simpleName
+            }
+            if (attempt + 1 < MAX_RESULT_POLLS) delay(RESULT_POLL_DELAY_MS * (attempt + 1))
+        }
+        error("Hugging Face stream ended without audio after $MAX_RESULT_POLLS polls: $lastDiagnostic")
+    }
+
+    private fun parseSseBody(body: String): JsonElement? {
+        runCatching { JsonParser.parseString(body.trim()) }.getOrNull()?.let { direct ->
+            if (outputUrl(direct) != null) return direct
+        }
+        for (line in body.lineSequence()) {
+            val trimmed = line.trim()
+            when {
+                trimmed.startsWith("event:") -> Unit
+                !trimmed.startsWith("data:") -> Unit
+                else -> {
+                    val raw = trimmed.removePrefix("data:").trim()
+                    if (raw.isBlank() || raw == "null") continue
+                    val data = runCatching { JsonParser.parseString(raw) }
+                        .getOrElse { error("Hugging Face event JSON မမှန်ပါ: ${raw.take(MAX_ERROR_BODY)}") }
+                    if (data.isJsonPrimitive && data.asJsonPrimitive.isString) {
+                        error("Hugging Face VoxCPM job error: ${data.asString.take(MAX_ERROR_BODY)}")
+                    }
+                    if (data.isJsonObject) {
+                        val message = data.asJsonObject.get("error")?.takeIf { !it.isJsonNull }?.asString
+                        if (!message.isNullOrBlank()) error("Hugging Face VoxCPM job error: ${message.take(MAX_ERROR_BODY)}")
+                    }
+                    if (outputUrl(data) != null) return data
                 }
             }
-            return audioResult ?: error(
-                "Hugging Face stream ended without audio: event=${lastEvent.ifBlank { "unknown" }}; " +
-                    "lastData=${lastData?.toString()?.take(MAX_ERROR_BODY) ?: "none"}; " +
-                    "body=${body.take(MAX_ERROR_BODY)}"
-            )
         }
+        return null
+    }
+
+    private fun sseDiagnostic(body: String): String {
+        if (body.isBlank()) return "empty response body"
+        val compact = body.replace(Regex("\\s+"), " ").trim()
+        return compact.take(MAX_ERROR_BODY)
     }
 
     private fun outputUrl(result: JsonElement): String? {

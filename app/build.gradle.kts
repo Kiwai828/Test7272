@@ -18,8 +18,8 @@ android {
         applicationId = "com.recapmaker.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.3.1-hf-sse"
+        versionCode = 5
+        versionName = "3.0.0-HF"
         buildConfigField("String", "API_BASE_URL", "\"https://zzzzz-mu.vercel.app\"")
         buildConfigField("String", "VOICE_PROVIDER_BUILD", "\"HF_GRADIO_ONLY\"")
     }
